@@ -1,0 +1,1 @@
+update public.pages set status='pending' where book_id='4dea8c96-a4b6-4034-acda-bac6a464d3bb' and status='failed'

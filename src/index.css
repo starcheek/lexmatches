@@ -1,0 +1,161 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Warm paper background - cream/beige tones */
+    --background: 42 47% 97%;
+    --foreground: 25 25% 15%;
+
+    /* Card surfaces - slightly warmer white */
+    --card: 40 40% 98%;
+    --card-foreground: 25 25% 15%;
+
+    /* Popover surfaces */
+    --popover: 40 40% 98%;
+    --popover-foreground: 25 25% 15%;
+
+    /* Primary - Rich espresso brown */
+    --primary: 25 45% 20%;
+    --primary-foreground: 42 47% 97%;
+
+    /* Secondary - Soft taupe */
+    --secondary: 30 15% 85%;
+    --secondary-foreground: 25 45% 20%;
+
+    /* Muted - Light beige for subtle elements */
+    --muted: 35 25% 90%;
+    --muted-foreground: 30 15% 45%;
+
+    /* Accent - Deep teal for interactive elements */
+    --accent: 185 55% 35%;
+    --accent-foreground: 42 47% 97%;
+
+    /* Destructive - Warm red */
+    --destructive: 0 65% 50%;
+    --destructive-foreground: 42 47% 97%;
+
+    /* Borders and inputs - subtle warm gray */
+    --border: 35 15% 85%;
+    --input: 35 15% 85%;
+    --ring: 185 55% 35%;
+
+    --radius: 0.75rem;
+    
+    /* Custom tokens for reading interface */
+    --translation-text: 30 20% 50%;
+    --reading-bg: 42 35% 95%;
+    --shadow-soft: 0 4px 20px -4px rgba(0, 0, 0, 0.08);
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    /* Dark mode - warm sepia tones */
+    --background: 25 20% 10%;
+    --foreground: 42 40% 90%;
+
+    --card: 25 18% 12%;
+    --card-foreground: 42 40% 90%;
+
+    --popover: 25 18% 12%;
+    --popover-foreground: 42 40% 90%;
+
+    --primary: 42 50% 85%;
+    --primary-foreground: 25 25% 15%;
+
+    --secondary: 25 15% 20%;
+    --secondary-foreground: 42 40% 90%;
+
+    --muted: 25 15% 18%;
+    --muted-foreground: 30 20% 60%;
+
+    --accent: 185 45% 45%;
+    --accent-foreground: 42 47% 97%;
+
+    --destructive: 0 60% 45%;
+    --destructive-foreground: 42 40% 90%;
+
+    --border: 25 15% 22%;
+    --input: 25 15% 22%;
+    --ring: 185 45% 45%;
+    
+    --sidebar-background: 25 20% 10%;
+    --sidebar-foreground: 42 40% 90%;
+    --sidebar-primary: 185 45% 45%;
+    --sidebar-primary-foreground: 42 47% 97%;
+    --sidebar-accent: 25 15% 18%;
+    --sidebar-accent-foreground: 42 40% 90%;
+    --sidebar-border: 25 15% 22%;
+    --sidebar-ring: 185 45% 45%;
+    
+    --translation-text: 30 30% 65%;
+    --reading-bg: 25 18% 14%;
+    --shadow-soft: 0 4px 20px -4px rgba(0, 0, 0, 0.3);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "kern" 1, "liga" 1;
+  }
+  
+  /* Reading content typography */
+  .reading-content {
+    font-family: "Crimson Pro", "Georgia", serif;
+    line-height: 1.75;
+    letter-spacing: 0.01em;
+  }
+  
+  /* Translation text styling */
+  .translation-text {
+    color: hsl(var(--translation-text));
+    font-style: italic;
+    font-size: 0.9em;
+  }
+
+  @media (min-width: 1024px) {
+    .translated-line-pairs {
+      white-space: nowrap;
+    }
+
+    .translated-line .translated-original {
+      font-size: var(--fitted-line-size, 1.125rem);
+      line-height: 1.45;
+    }
+
+    .translated-line .translated-translation {
+      font-size: calc(var(--fitted-line-size, 1.125rem) * 0.72);
+      line-height: 1.45;
+    }
+
+    .translated-line .translated-word-pair {
+      margin-right: calc(var(--fitted-line-size, 1.125rem) * 0.7);
+      margin-bottom: calc(var(--fitted-line-size, 1.125rem) * 0.35);
+    }
+  }
+}

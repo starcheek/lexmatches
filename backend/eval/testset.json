@@ -1,0 +1,39 @@
+{
+  "_doc": "Passages live in passages/<id>.txt (page text exactly as the pipeline receives it); origins in passages/manifest.json. Passages of the same book run in order (page 1 then page 2) so glossary/context carry over. 'terms': per book, a source pattern and the target renderings to look for in the natural translations of sentences containing it (consistency metric); patterns are case-insensitive regexes.",
+  "order": ["fr_candide_1", "fr_candide_2", "fr_verne_pdf", "fr_miserables_1", "fr_miserables_2", "fr_mousquetaires_ru",
+            "de_verwandlung_1", "de_verwandlung_2", "ru_dama_1", "ru_dama_2", "pt_casmurro", "lv_lacplesis",
+            "ja_rashomon", "en_austen_1_lv", "en_austen_2_lv"],
+  "terms": {
+    "candide": {
+      "(madame )?la baronne": ["baroness", "lady baron", "madame (the )?baron"],
+      "docteur pangloss|pangloss": ["doctor pangloss", "dr\\.? pangloss", "master pangloss", "(?<!doctor )(?<!dr\\. )pangloss"],
+      "mademoiselle cunégonde": ["miss cun[ée]gonde", "mademoiselle cun[ée]gonde", "lady cun[ée]gonde", "young cun[ée]gonde"],
+      "thunder-ten-tronckh": ["thunder-ten-tronckh", "thunder ten tronckh", "thundertentronckh"]
+    },
+    "miserables": {
+      "monseigneur": ["monseigneur", "my lord", "monsignor", "his lordship", "his grace", "my lord bishop"],
+      "(madame )?magloire": ["madame magloire", "mrs\\.? magloire", "mme\\.? magloire", "(?<!madame )(?<!mrs\\. )(?<!mme )magloire"],
+      "(mademoiselle )?baptistine": ["mademoiselle baptistine", "miss baptistine", "mlle\\.? baptistine", "(?<!mademoiselle )(?<!miss )baptistine"],
+      "(m\\. |monsieur )?myriel": ["monsieur myriel", "m\\. myriel", "mr\\.? myriel", "(?<!monsieur )(?<!m\\. )(?<!mr\\. )myriel"]
+    },
+    "verwandlung": {
+      "prokurist": ["chief clerk", "head clerk", "office manager", "general manager", "manager", "procurator", "authori[sz]ed (clerk|officer|signatory)", "deputy"],
+      "gregor": ["gregor", "grigor"]
+    },
+    "dama": {
+      "гуров": ["gurov", "gourov", "guroff"],
+      "анн[аыеуо]й? сергеевн": ["anna sergeyevna", "anna sergeevna", "anna sergueevna", "anna sergeievna"],
+      "ялт": ["yalta", "jalta"]
+    },
+    "rashomon": {
+      "下人": ["servant", "menial", "underling", "lackey", "retainer", "lowly man", "low-ranking", "commoner", "manservant"],
+      "羅生門": ["rash[oō]mon", "rasho-mon", "rashomon gate"]
+    },
+    "austen": {
+      "mr\\. bennet": ["ben+et[a-zāēīū]* kung", "kung[a-zāēīū]* ben+et", "mister[a-zāēīū]* ben+et", "mr\\.? ben+et"],
+      "mrs\\. bennet": ["ben+et[a-zāēīū]* kundz", "kundz[a-zāēīū]* ben+et", "misis[a-zāēīū]* ben+et", "mrs\\.? ben+et"],
+      "netherfield": ["netherfield", "nezerf[iī]ld", "neterf[iī]ld", "nederfīld"],
+      "bingley": ["bingl[ie]j", "bingley", "bingli"]
+    }
+  }
+}

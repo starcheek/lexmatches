@@ -1,1 +1,0 @@
-UPDATE public.pages SET status = 'pending' WHERE status = 'processing' AND updated_at < now() - interval '2 minutes';

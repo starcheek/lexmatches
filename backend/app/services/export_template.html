@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="__LANG__">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>__TITLE__ - Translation</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body { 
+      font-family: 'Libre Baskerville', 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif;
+      background: linear-gradient(135deg, #FAF7F2 0%, #F5F0E8 50%, #FAF7F2 100%);
+      color: #2D2A26;
+      padding: 2rem;
+      line-height: 1.8;
+      min-height: 100vh;
+    }
+    
+    .container {
+      width: 100%;
+      max-width: none;
+      margin: 0 auto;
+    }
+    
+    .header {
+      text-align: center;
+      margin-bottom: 3rem;
+      padding: 2rem;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(139, 115, 85, 0.1);
+    }
+    
+    h1 { 
+      color: #8B7355;
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+    }
+    
+    .subtitle {
+      color: #6B6560;
+      font-size: 0.9rem;
+    }
+    
+    /* Desktop controls share the top bar; mobile keeps the bottom control. */
+    .sticky-toggle {
+      position: fixed;
+      z-index: 1000;
+      display: flex;
+      gap: 0.5rem;
+    }
+    
+    @media (min-width: 1024px) {
+      .sticky-toggle {
+        left: auto;
+        right: 4.5rem;
+        top: 1rem;
+        flex-direction: row;
+      }
+    }
+    
+    /* Tablet: fixed bottom bar with left offset */
+    @media (min-width: 769px) and (max-width: 1023px) {
+      .sticky-toggle {
+        position: fixed;
+        bottom: 0;
+        left: 2rem;
+        right: 0;
+        justify-content: flex-start;
+        padding: 0.75rem;
+        background: rgba(255, 255, 255, 0.98);
+        border-top: 1px solid #E8E4DF;
+        box-shadow: 0 -2px 10px rgba(139, 115, 85, 0.1);
+      }
+      body {
+        padding-bottom: 4rem;
+      }
+    }
+    
+    /* Mobile: fixed bottom bar, full width button */
+    @media (max-width: 768px) {
+      .sticky-toggle {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        padding: 0.75rem;
+        background: rgba(255, 255, 255, 0.98);
+        border-top: 1px solid #E8E4DF;
+        box-shadow: 0 -2px 10px rgba(139, 115, 85, 0.1);
+      }
+      .toggle-btn {
+        flex: 1;
+        justify-content: center;
+      }
+      body {
+        padding-bottom: 4rem;
+      }
+    }
+    
+    .toggle-btn {
+      padding: 0.75rem 1.25rem;
+      font-family: inherit;
+      font-size: 0.85rem;
+      border: 2px solid #8B7355;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: white;
+      color: #8B7355;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .toggle-btn.active {
+      background: #8B7355;
+      color: white;
+    }
+    
+    .toggle-btn:hover {
+      background: #8B7355;
+      color: white;
+    }
+    
+    .toggle-icon {
+      width: 16px;
+      height: 16px;
+    }
+
+    .controls-legend {
+      position: fixed;
+      bottom: 1rem;
+      right: 1rem;
+      z-index: 1000;
+      font-family: inherit;
+    }
+    @media (min-width: 1024px) {
+      .controls-legend { bottom: auto; top: 1rem; right: 1rem; }
+    }
+    .controls-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 2px solid #8B7355;
+      background: white;
+      color: #8B7355;
+      font-size: 1.1rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .controls-panel {
+      display: none;
+      position: absolute;
+      bottom: 110%;
+      right: 0;
+      background: white;
+      border: 1px solid #E8E4DF;
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(139, 115, 85, 0.15);
+      padding: 0.75rem 1rem;
+      font-size: 0.8rem;
+      color: #6B6560;
+      white-space: nowrap;
+    }
+    @media (min-width: 1024px) {
+      .controls-panel { bottom: auto; top: 110%; }
+    }
+    .controls-legend.open .controls-panel { display: block; }
+    .controls-panel kbd {
+      background: #F5F0E8;
+      border: 1px solid #E8E4DF;
+      border-radius: 4px;
+      padding: 0.1rem 0.35rem;
+      font-family: inherit;
+      font-size: 0.75rem;
+      color: #2D2A26;
+    }
+    .controls-panel div { margin: 0.25rem 0; }
+    @media print {
+      .controls-legend { display: none; }
+    }
+    
+    .page { 
+      margin-bottom: 2rem;
+      padding: 2rem;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(139, 115, 85, 0.1);
+      page-break-after: always;
+    }
+    
+    .page-header {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: #6B6560;
+      margin-bottom: 1.5rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid #E8E4DF;
+    }
+    
+    .line { 
+      margin-bottom: 0.5rem;
+      line-height: 1.8;
+    }
+
+    @media (min-width: 1024px) {
+      .line {
+        white-space: nowrap;
+      }
+    }
+    
+    .word-pair { 
+      display: inline-flex;
+      flex-direction: column;
+      margin-right: calc(var(--fitted-line-size, 1.125rem) * 0.7);
+      margin-bottom: calc(var(--fitted-line-size, 1.125rem) * 0.35);
+      vertical-align: top;
+      min-height: 2.5rem;
+    }
+    
+    .original { 
+      font-size: var(--fitted-line-size, 1.125rem);
+      line-height: 1.45;
+      color: #2D2A26;
+      white-space: nowrap;
+    }
+    
+    .translation { 
+      font-size: calc(var(--fitted-line-size, 1.125rem) * 0.72);
+      line-height: 1.45;
+      color: #8B7355;
+      font-style: italic;
+      white-space: nowrap;
+      visibility: visible;
+      height: 1rem;
+    }
+    
+    .hide-translations .translation {
+      visibility: hidden;
+    }
+    
+    .full-translation {
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid #E8E4DF;
+    }
+    
+    .hide-full-translation .full-translation {
+      display: none;
+    }
+    
+    .full-translation-label {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #6B6560;
+      margin-bottom: 0.5rem;
+    }
+    
+    .full-translation-text {
+      font-size: 1rem;
+      color: rgba(45, 42, 38, 0.8);
+      line-height: 1.7;
+    }
+    
+    @media print {
+      body { 
+        background: white; 
+        padding: 0.5rem;
+      }
+      .page { 
+        box-shadow: none;
+        border: 1px solid #E8E4DF;
+        page-break-after: always;
+      }
+      .header {
+        box-shadow: none;
+        border: 1px solid #E8E4DF;
+      }
+      .sticky-toggle {
+        display: none;
+      }
+    }
+    
+    @media (max-width: 768px) {
+      body { padding: 1rem; padding-bottom: 5rem; }
+      .page { padding: 1rem; }
+      h1 { font-size: 1.5rem; }
+      .toggle-btn {
+        padding: 0.6rem 0.75rem;
+        font-size: 0.75rem;
+      }
+      .word-pair {
+        margin-right: 0.75rem;
+        margin-bottom: 0.5rem;
+      }
+      .original { font-size: 1.125rem; }
+      .translation { font-size: 0.875rem; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Sticky toggle button -->
+  <div class="sticky-toggle" id="stickyToggle">
+    <button class="toggle-btn active" id="toggleWordBtn" onclick="toggleWordTranslations()" title="Toggle word translations">
+      <svg class="toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M2 12h20M12 2v20"/>
+      </svg>
+      <span>Words</span>
+    </button>
+  </div>
+
+  <div class="controls-legend" id="controlsLegend">
+    <button class="controls-btn" onclick="document.getElementById('controlsLegend').classList.toggle('open')" title="Keyboard controls">?</button>
+    <div class="controls-panel">
+      <div><kbd>W</kbd>/<kbd>S</kbd> or <kbd>↑</kbd>/<kbd>↓</kbd> — scroll by line</div>
+      <div><kbd>A</kbd>/<kbd>D</kbd> or <kbd>←</kbd>/<kbd>→</kbd> — toggle translations</div>
+    </div>
+  </div>
+
+  <div class="container" id="content">
+    <div class="header">
+      <h1>__TITLE__</h1>
+      <p class="subtitle">__LOCALES__</p>
+      <p class="subtitle">Pages __RANGE__</p>
+    </div>
+
+__PAGES__    
+  </div>
+  <script>
+    let showWordTranslations = true;
+    
+    function toggleWordTranslations() {
+      showWordTranslations = !showWordTranslations;
+      const content = document.getElementById('content');
+      const btn = document.getElementById('toggleWordBtn');
+      if (showWordTranslations) {
+        content.classList.remove('hide-translations');
+        btn.classList.add('active');
+      } else {
+        content.classList.add('hide-translations');
+        btn.classList.remove('active');
+      }
+    }
+
+    function fitTranslatedLines() {
+      if (!window.matchMedia('(min-width: 1024px)').matches) {
+        document.querySelectorAll('.line').forEach(function (line) {
+          line.style.removeProperty('--fitted-line-size');
+        });
+        return;
+      }
+
+      document.querySelectorAll('.line').forEach(function (line) {
+        line.style.removeProperty('--fitted-line-size');
+        var availableWidth = line.clientWidth;
+        var naturalWidth = line.scrollWidth;
+        if (availableWidth <= 0 || naturalWidth <= 0) return;
+        var fittedSize = Math.min(24, 18 * (availableWidth / naturalWidth));
+        line.style.setProperty('--fitted-line-size', fittedSize + 'px');
+      });
+    }
+
+    window.addEventListener('resize', fitTranslatedLines);
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(fitTranslatedLines);
+    } else {
+      window.addEventListener('load', fitTranslatedLines);
+    }
+
+    // Keyboard controls: W/S/Up/Down scroll one line (smooth, repeats when held),
+    // A/D/Left/Right toggle word translations.
+    (function () {
+      function getLineHeight() {
+        var lines = document.querySelectorAll('.line');
+        if (lines.length >= 2) {
+          var h = lines[1].getBoundingClientRect().top - lines[0].getBoundingClientRect().top;
+          if (h > 10) return h;
+        }
+        return 32;
+      }
+
+      var animId = null;
+      function smoothScrollBy(amount) {
+        if (animId) cancelAnimationFrame(animId);
+        var startY = window.scrollY;
+        var targetY = Math.max(0, startY + amount);
+        var start = null;
+        var duration = 220;
+        function step(ts) {
+          if (!start) start = ts;
+          var p = Math.min(1, (ts - start) / duration);
+          var eased = 1 - Math.pow(1 - p, 3);
+          window.scrollTo(0, startY + (targetY - startY) * eased);
+          if (p < 1) animId = requestAnimationFrame(step);
+          else animId = null;
+        }
+        animId = requestAnimationFrame(step);
+      }
+
+      var INITIAL_DELAY = 220;
+      var REPEAT_INTERVAL = 90;
+      var hold = { timeout: null, interval: null };
+
+      function clearHold() {
+        if (hold.timeout) clearTimeout(hold.timeout);
+        if (hold.interval) clearInterval(hold.interval);
+        hold.timeout = hold.interval = null;
+      }
+
+      function scrollDirection(dir) {
+        smoothScrollBy(dir * getLineHeight());
+      }
+
+      var scrollKeys = { w: -1, s: 1, arrowup: -1, arrowdown: 1 };
+      var toggleKeys = ['a', 'd', 'arrowleft', 'arrowright'];
+
+      document.addEventListener('keydown', function (e) {
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+        var key = e.key.toLowerCase();
+        if (key in scrollKeys) {
+          e.preventDefault();
+          if (e.repeat) return;
+          scrollDirection(scrollKeys[key]);
+          clearHold();
+          hold.timeout = setTimeout(function () {
+            hold.interval = setInterval(function () { scrollDirection(scrollKeys[key]); }, REPEAT_INTERVAL);
+          }, INITIAL_DELAY);
+        } else if (toggleKeys.indexOf(key) !== -1) {
+          e.preventDefault();
+          if (e.repeat) return;
+          toggleWordTranslations();
+        }
+      });
+
+      document.addEventListener('keyup', function (e) {
+        if (e.key.toLowerCase() in scrollKeys) clearHold();
+      });
+      window.addEventListener('blur', clearHold);
+    })();
+  </script>
+</body>
+</html>

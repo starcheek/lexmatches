@@ -4,9 +4,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Crown, Sparkles } from 'lucide-react';
 
 export const SubscriptionBanner = () => {
-  const { subscribed, freePages, loading, handleCheckout, handlePortal } = useSubscription();
+  const { billingEnabled, subscribed, freePages, loading, handleCheckout, handlePortal } = useSubscription();
 
-  if (loading) return null;
+  // Billing is optional (STRIPE_SECRET_KEY on the API); without it there are no limits to show.
+  if (loading || !billingEnabled) return null;
 
   if (subscribed) {
     return (

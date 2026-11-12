@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { api, ApiError, isLoggedIn } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, BookOpen, Loader2, TrendingDown, TrendingUp } from "lucide-react";
@@ -10,6 +10,7 @@ interface SessionRow {
   book_id: string;
   page_number: number;
   translation_toggle_clicks: number;
+  words: number;
 }
 
 interface BookStats {
@@ -23,9 +24,6 @@ interface BookStats {
   trend: 'up' | 'down' | 'stable';
   points: { page: number; rate: number; clicks: number; words: number; trend: number }[];
 }
-
-const countWords = (text: string | null) =>
-  text ? (text.trim().match(/[\p{L}\p{N}'’-]+/gu)?.length ?? 0) : 0;
 
 const linearTrend = (points: { page: number; rate: number }[]) => {
   const n = points.length;
@@ -46,11 +44,11 @@ const Progress = () => {
 
   useEffect(() => {
     checkAuth();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once on mount
   }, []);
 
   const checkAuth = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
+    if (!isLoggedIn()) {
       navigate("/auth");
       return;
     }
@@ -59,59 +57,20 @@ const Progress = () => {
   };
 
   const fetchData = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const [{ data: booksData, error: booksError }, { data: sessions, error: sessionsError }] = await Promise.all([
-      supabase.from('books').select('id, title, total_pages').eq('user_id', user.id).order('created_at', { ascending: false }),
-      supabase
-        .from('reading_sessions')
-        .select('book_id, page_number, translation_toggle_clicks')
-        .eq('user_id', user.id)
-        .order('page_number', { ascending: true }),
-    ]);
-
-    if (booksError || sessionsError) {
-      console.error('Error fetching analytics:', booksError || sessionsError);
+    let data;
+    try {
+      data = await api.getProgress();
+    } catch (error) {
+      console.error('Error fetching analytics:', error);
+      if (error instanceof ApiError && error.status === 401) navigate("/auth");
       return;
     }
+    const booksData = data.books;
+    const rows: SessionRow[] = data.sessions;
 
-    const rows = (sessions || []) as SessionRow[];
-    const bookIds = (booksData || []).map(b => b.id);
-
-    // Word counts per page (used to normalise clicks by page length).
-    // Only the pages that actually have a reading session matter, and the API caps
-    // each response at 1000 rows — so fetch per book, paginated, for the read pages only.
+    // Word counts per page (used to normalise clicks by page length) are computed server-side.
     const wordsByBookPage = new Map<string, number>();
-    const pagesNeeded = new Map<string, Set<number>>();
-    rows.forEach(r => {
-      if (!pagesNeeded.has(r.book_id)) pagesNeeded.set(r.book_id, new Set());
-      pagesNeeded.get(r.book_id)!.add(r.page_number);
-    });
-
-    await Promise.all(
-      bookIds
-        .filter(id => pagesNeeded.has(id))
-        .map(async bookId => {
-          const pageNumbers = Array.from(pagesNeeded.get(bookId)!);
-          for (let i = 0; i < pageNumbers.length; i += 200) {
-            const chunk = pageNumbers.slice(i, i + 200);
-            const { data: pagesData, error: pagesError } = await supabase
-              .from('pages')
-              .select('book_id, page_number, original_text')
-              .eq('book_id', bookId)
-              .in('page_number', chunk);
-
-            if (pagesError) {
-              console.error('Error fetching page word counts:', pagesError);
-              continue;
-            }
-            (pagesData || []).forEach(p => {
-              wordsByBookPage.set(`${p.book_id}:${p.page_number}`, countWords(p.original_text));
-            });
-          }
-        })
-    );
+    rows.forEach(r => wordsByBookPage.set(`${r.book_id}:${r.page_number}`, r.words));
 
     const stats: BookStats[] = (booksData || []).map(book => {
       const perPage = new Map<number, number>();
@@ -189,7 +148,7 @@ const Progress = () => {
         <div className="mb-8">
           <h1 className="text-4xl font-serif font-bold text-primary mb-2">Your Learning Progress</h1>
           <p className="text-muted-foreground">
-            Per-book comprehension metrics — fewer translation toggles per page means you need less help
+            How often you asked for help (glosses, sentence translations) per 100 words. Lower is better.
           </p>
         </div>
 
@@ -219,7 +178,7 @@ const Progress = () => {
                       <div className="min-w-0">
                         <p className="font-serif font-semibold text-primary truncate">{book.title}</p>
                         <p className="text-xs text-muted-foreground mt-1">
-                          {book.pagesRead} of {book.totalPages} pages tracked · avg {book.avgClicksPer100Words} clicks / 100 words
+                          {book.pagesRead} of {book.totalPages} pages tracked · avg {book.avgClicksPer100Words} help requests / 100 words
                         </p>
 
                         <div className="flex items-center gap-1 mt-2 text-xs">
@@ -246,7 +205,7 @@ const Progress = () => {
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <Card>
                           <CardHeader>
-                            <CardTitle className="text-sm font-medium text-muted-foreground">Clicks / 100 Words</CardTitle>
+                            <CardTitle className="text-sm font-medium text-muted-foreground">Help / 100 words</CardTitle>
                           </CardHeader>
                           <CardContent>
                             <div className="text-3xl font-bold text-primary">{book.avgClicksPer100Words}</div>
@@ -265,7 +224,7 @@ const Progress = () => {
                         </Card>
                         <Card>
                           <CardHeader>
-                            <CardTitle className="text-sm font-medium text-muted-foreground">Total Toggles</CardTitle>
+                            <CardTitle className="text-sm font-medium text-muted-foreground">Help requests</CardTitle>
                           </CardHeader>
                           <CardContent>
                             <div className="text-3xl font-bold text-primary">{book.totalClicks}</div>
@@ -276,7 +235,7 @@ const Progress = () => {
 
                       <Card>
                         <CardHeader>
-                          <CardTitle className="font-serif">{book.title} — clicks per 100 words</CardTitle>
+                          <CardTitle className="font-serif">{book.title} — help per 100 words</CardTitle>
                           <CardDescription>
                             Each point is one page, normalised by how many words that page has. The dashed line is the
                             trend — a downward slope means your comprehension is improving as you progress.
@@ -296,7 +255,7 @@ const Progress = () => {
                                 <YAxis
                                   stroke="hsl(var(--muted-foreground))"
                                   fontSize={12}
-                                  label={{ value: 'Clicks / 100 words', angle: -90, position: 'insideLeft' }}
+                                  label={{ value: 'Help / 100 words', angle: -90, position: 'insideLeft' }}
                                 />
                                 <Tooltip
                                   contentStyle={{
@@ -313,7 +272,7 @@ const Progress = () => {
                                   stroke="hsl(var(--accent))"
                                   strokeWidth={2}
                                   dot={{ fill: 'hsl(var(--accent))' }}
-                                  name="Clicks / 100 words"
+                                  name="Help / 100 words"
                                 />
 
                                 <Line
@@ -331,7 +290,7 @@ const Progress = () => {
                             <div className="text-center py-12">
                               <p className="text-muted-foreground mb-2">No data for this book yet</p>
                               <p className="text-sm text-muted-foreground">
-                                Read a few pages and toggle translations to build the trendline.
+                                Read a few pages: every gloss toggle or sentence translation you open is counted here.
                               </p>
                             </div>
                           )}

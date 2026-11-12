@@ -1,97 +1,83 @@
-import { useEffect, useRef, useState } from 'react';
-import { Loader2 } from 'lucide-react';
-import * as pdfjsLib from 'pdfjs-dist';
+// Renders one page of the original PDF. Lazy-loaded (pdf.js is ~400 kB): see Read.tsx.
+import { useEffect, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
+import * as pdfjsLib from "pdfjs-dist";
+import type { PDFDocumentProxy } from "pdfjs-dist";
+import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
-// Set up the worker using the installed package
-// @ts-ignore - Vite will handle this
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 
 interface PdfViewerProps {
   pdfUrl: string;
+  /** 1-based PDF page (the reading unit's source_page_start, not necessarily its page_number). */
   pageNumber: number;
 }
 
 const PdfViewer = ({ pdfUrl, pageNumber }: PdfViewerProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Load the document once per URL.
   useEffect(() => {
-    let isMounted = true;
+    let cancelled = false;
+    const task = pdfjsLib.getDocument({ url: pdfUrl });
+    task.promise.then(
+      (d) => !cancelled && setDoc(d),
+      (e) => !cancelled && setError(`Could not open the PDF: ${e instanceof Error ? e.message : e}`),
+    );
+    return () => {
+      cancelled = true;
+      void task.destroy();
+    };
+  }, [pdfUrl]);
 
-    const loadPage = async () => {
-      if (!canvasRef.current) return;
-      
+  useEffect(() => {
+    if (!doc || !canvasRef.current) return;
+    let cancelled = false;
+    let render: { cancel: () => void } | null = null;
+    (async () => {
+      setLoading(true);
+      setError(null);
       try {
-        setLoading(true);
-        setError(null);
-
-        console.log('Loading PDF from URL:', pdfUrl);
-        
-        const loadingTask = pdfjsLib.getDocument({
-          url: pdfUrl,
-          withCredentials: false
-        });
-        const pdf = await loadingTask.promise;
-        
-        if (!isMounted) return;
-
-        console.log('PDF loaded, rendering page:', pageNumber);
-        
-        const page = await pdf.getPage(pageNumber);
-        const viewport = page.getViewport({ scale: 1.5 });
-
+        if (pageNumber < 1 || pageNumber > doc.numPages) throw new Error(`the PDF has ${doc.numPages} pages`);
+        const page = await doc.getPage(pageNumber);
+        if (cancelled || !canvasRef.current) return;
+        const viewport = page.getViewport({ scale: Math.min(2, window.devicePixelRatio || 1) * 1.25 });
         const canvas = canvasRef.current;
-        const context = canvas.getContext('2d');
-        
-        if (!context) {
-          setError('Canvas context not available');
-          return;
-        }
-
-        canvas.height = viewport.height;
         canvas.width = viewport.width;
-
-        await page.render({
-          canvasContext: context,
-          viewport: viewport
-        } as any).promise;
-        
-        console.log('Page rendered successfully');
-        
-        if (isMounted) {
-          setLoading(false);
-        }
-      } catch (err) {
-        console.error('Error loading PDF page:', err);
-        if (isMounted) {
-          setError(`Failed to load PDF page: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        canvas.height = viewport.height;
+        const task = page.render({ canvas, viewport });
+        render = task;
+        await task.promise;
+        if (!cancelled) setLoading(false);
+      } catch (e) {
+        if (!cancelled && !(e instanceof Error && e.name === "RenderingCancelledException")) {
+          setError(`Could not show PDF page ${pageNumber}: ${e instanceof Error ? e.message : e}`);
           setLoading(false);
         }
       }
-    };
-
-    loadPage();
-
+    })();
     return () => {
-      isMounted = false;
+      cancelled = true;
+      render?.cancel();
     };
-  }, [pdfUrl, pageNumber]);
+  }, [doc, pageNumber]);
 
   return (
-    <div className="relative flex items-center justify-center bg-muted/30 rounded-lg p-4 min-h-[600px]">
-      {loading && (
+    <div className="relative flex min-h-[60vh] items-start justify-center rounded-lg bg-muted/30 p-2 sm:p-4">
+      {loading && !error && (
         <div className="absolute inset-0 flex items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-accent" />
+          <Loader2 className="h-8 w-8 animate-spin text-accent" aria-label="Loading PDF page" />
         </div>
       )}
-      {error && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <p className="text-destructive">{error}</p>
-        </div>
-      )}
-      <canvas ref={canvasRef} className={`max-w-full h-auto ${loading ? 'opacity-0' : 'opacity-100'} transition-opacity`} />
+      {error && <p className="m-auto p-6 text-center text-sm text-destructive">{error}</p>}
+      <canvas
+        ref={canvasRef}
+        className={`h-auto max-w-full rounded shadow-soft transition-opacity ${loading || error ? "opacity-0" : "opacity-100"}`}
+        aria-label={`PDF page ${pageNumber}`}
+      />
     </div>
   );
 };

@@ -1,0 +1,91 @@
+name: lexmatches
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: lexmatches
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lexmatches}
+      POSTGRES_DB: lexmatches
+    ports:
+      - "5544:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lexmatches -d lexmatches"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # The upstream minio/minio image is no longer published; Chainguard rebuilds MinIO from source.
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    user: "0:0"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-lexmatches}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-lexmatches-secret}
+    ports:
+      - "9200:9000"
+      - "9201:9001"
+    volumes:
+      - miniodata:/data
+    restart: unless-stopped
+
+  api:
+    build: ./backend
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://lexmatches:${POSTGRES_PASSWORD:-lexmatches}@postgres:5432/lexmatches
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-lexmatches}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-lexmatches-secret}
+      PIPER_VOICES_DIR: /data/piper
+    ports:
+      # Direct API access only (the site reaches the API through the web container). Set API_PORT when
+      # Windows has reserved 8100 (see `netsh interface ipv4 show excludedportrange protocol=tcp`).
+      - "${API_PORT:-8100}:8000"
+    volumes:
+      - piper-voices:/data/piper
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    ports:
+      - "3100:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # Temporary public HTTPS address for testers (Cloudflare quick tunnel, no account, no open ports).
+  # Start and print the links with `sh scripts/share.sh`, take it down with `sh scripts/share.sh stop`
+  # (README "Test round with remote testers"). The address changes every time this container starts.
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    command: tunnel --no-autoupdate --url http://web:80
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  miniodata:
+  piper-voices:

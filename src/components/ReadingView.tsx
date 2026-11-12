@@ -1,845 +1,688 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { createPortal } from "react-dom";
+// The reader: original text as paragraphs of sentences, optional interlinear glosses under word chunks,
+// natural sentence translations on demand, read-aloud with sentence + word highlight.
+//
+// Help model: the learner reads the original and looks up only what they do not know.
+//   - click / tap a word or phrase -> its gloss under it (again to hide)
+//   - ↑ / ↓                        -> move the current line (a dot in the left margin), scrolling line by line
+//   - ← / → (same thing), G, "Glosses" -> all glosses of the page on / off
+//   - L, "Line"                    -> line mode: only the current line shows its glosses; they follow ↑ / ↓
+//   - "Translation" (T)            -> natural translation after every paragraph (side by side on wide screens)
+//   - Enter                        -> natural translation of the current line's sentence
+// The gloss row is always reserved, so nothing moves when a gloss appears. Every lookup (not hiding)
+// counts as one "translation toggle click" for the Progress page (reading_sessions) and in the dock.
+// Pages are turned with the buttons. While read-aloud is active, tapping a sentence jumps playback there.
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { AArrowDown, AArrowUp, ChevronLeft, ChevronRight, Languages, Play, Rows3, WholeWord } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Eye, EyeOff, ChevronLeft, ChevronRight, Loader2, Volume2, Square, ScanEye, Keyboard } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
-import { useEyeTracking } from "@/hooks/useEyeTracking";
+import { Tip } from "@/components/Tip";
+import { api, isLoggedIn, type TranslationData } from "@/lib/api";
+import { isShortcutEvent } from "@/lib/keys";
+import { buildReaderModel, type ReaderSentence } from "@/lib/readingModel";
+import { cn } from "@/lib/utils";
+import { ReadAloudBar, useReadAloud, wordToGroup, type AudioSegment } from "@/features/audio";
 
-interface WordPair {
-  original: string;
-  translation: string;
+const PREFS_KEY = "lexmatches:reader:v2"; // v2: glosses are off by default (the reader looks words up)
+interface Prefs {
+  glosses: boolean;
+  translations: boolean;
+  /** Line mode: the glosses of the current line only (the line followed with ↑ / ↓). */
+  line: boolean;
+  /** Index into TEXT_SCALES. */
+  size: number;
+}
+const TEXT_SCALES = [0.85, 1, 1.15, 1.3, 1.5];
+const DEFAULT_PREFS: Prefs = { glosses: false, translations: false, line: false, size: 1 };
+function loadPrefs(): Prefs {
+  try {
+    return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") };
+  } catch {
+    return DEFAULT_PREFS;
+  }
 }
 
-interface TranslationData {
-  lines: WordPair[][];
-  fullTranslation: string;
-}
+/** The tokens on the same visual line as `el` (a line is measured, not stored). */
+const lineOf = (all: HTMLElement[], el: HTMLElement) => {
+  const top = el.getBoundingClientRect().top;
+  return all.filter((t) => Math.abs(t.getBoundingClientRect().top - top) < 6);
+};
 
-interface PageImage {
-  data: string;
-  position?: number;
-}
+const HEADER_PX = 72; // sticky header height + margin
+const DOCK_PX = 88;
+const CJK = /[\u3040-\u30ff\u3400-\u9fff]/;
 
 interface ReadingViewProps {
   pageNumber: number;
-  originalText: string;
-  translationData?: TranslationData;
-  images?: PageImage[];
-  onNextPage: () => void;
-  onPrevPage: () => void;
   totalPages: number;
+  originalText: string;
+  translationData?: TranslationData | null;
   bookId: string;
   originalLocale?: string;
-  isProcessing?: boolean;
-  isPending?: boolean;
-  isFailed?: boolean;
-  isActuallyTranslating?: boolean;
-  translationProgress?: { done: number; total: number; rateLimited?: boolean };
-  onStartTranslation?: () => void;
-  onRetryTranslation?: () => void;
-  showSubscriptionError?: boolean;
+  onNextPage: () => void;
+  onPrevPage: () => void;
+  /** Status / action banner shown above the text (translate button, progress, errors). */
+  banner?: ReactNode;
+  /** Landing-page demo: controls inline instead of docked, no shortcuts, nothing recorded. */
+  demo?: boolean;
 }
 
 const ReadingView = ({
   pageNumber,
+  totalPages,
   originalText,
   translationData,
-  images = [],
-  onNextPage,
-  onPrevPage,
-  totalPages,
   bookId,
   originalLocale,
-  isProcessing = false,
-  isPending = false,
-  isActuallyTranslating = false,
-  translationProgress,
-  isFailed = false,
-  onStartTranslation,
-  onRetryTranslation,
-  showSubscriptionError = false,
+  onNextPage,
+  onPrevPage,
+  banner,
+  demo = false,
 }: ReadingViewProps) => {
-  const [showTranslations, setShowTranslations] = useState(true);
-  // Defensive: a truncated/partial realtime payload can arrive without `lines`
-  const safeLines: WordPair[][] = Array.isArray(translationData?.lines) ? translationData.lines : [];
-  const hasRenderableLines = safeLines.some(line => Array.isArray(line) && line.length > 0);
+  const model = useMemo(() => buildReaderModel(originalText, translationData), [originalText, translationData]);
+  const cjk = useMemo(() => CJK.test(originalText.slice(0, 400)), [originalText]);
+  const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
+  const [revealed, setRevealed] = useState<Set<number>>(new Set());
   const [clickCount, setClickCount] = useState(0);
-  const linesContainerRef = useRef<HTMLDivElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  
-  // Keyboard controls tooltip
-  const [showControlsTip, setShowControlsTip] = useState(false);
-  const [tipDismissed, setTipDismissed] = useState(false);
-  const [desktopControlsHost, setDesktopControlsHost] = useState<HTMLElement | null>(null);
+  const glossesOn = prefs.glosses && model.hasGlosses;
+  const translationsOn = prefs.translations && model.hasTranslations;
 
-  // Scroll progress: percentage of lines left to complete the page
-  const [scrollProgress, setScrollProgress] = useState(100);
-
-  useEffect(() => {
-    setDesktopControlsHost(document.getElementById("reader-desktop-controls"));
-  }, []);
-
-  // On desktop, keep every source line on one row and use the available width.
-  useEffect(() => {
-    if (!hasRenderableLines) return;
-
-    const fitLines = () => {
-      if (!window.matchMedia("(min-width: 1024px)").matches) return;
-
-      const lineElements = linesContainerRef.current?.querySelectorAll<HTMLElement>(".translated-line");
-      lineElements?.forEach((lineElement) => {
-        const pairs = lineElement.querySelector<HTMLElement>(".translated-line-pairs");
-        if (!pairs) return;
-
-        lineElement.style.removeProperty("--fitted-line-size");
-        const availableWidth = pairs.clientWidth;
-        const naturalWidth = pairs.scrollWidth;
-        if (availableWidth <= 0 || naturalWidth <= 0) return;
-
-        const fittedSize = Math.min(24, 18 * (availableWidth / naturalWidth));
-        lineElement.style.setProperty("--fitted-line-size", `${fittedSize}px`);
-      });
-    };
-
-    const frame = window.requestAnimationFrame(fitLines);
-    const observer = new ResizeObserver(fitLines);
-    if (linesContainerRef.current) observer.observe(linesContainerRef.current);
-    document.fonts?.ready.then(fitLines).catch(() => undefined);
-
-    return () => {
-      window.cancelAnimationFrame(frame);
-      observer.disconnect();
-    };
-  }, [hasRenderableLines, pageNumber, safeLines]);
-
-  // TTS state (Web Speech API)
-  const [playingLineIndex, setPlayingLineIndex] = useState<number | null>(null);
-  const [currentWordIndex, setCurrentWordIndex] = useState<number | null>(null);
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
-
-  // Eye tracking
-  const eyeTracking = useEyeTracking(containerRef);
-  const [calibrationPoints, setCalibrationPoints] = useState<{x: number, y: number, id: number}[]>([]);
-
-  // Handle calibration clicks
-  const handleCalibrationClick = (e: React.MouseEvent) => {
-    if (!eyeTracking.isCalibrating) return;
-    const newPoint = { x: e.clientX, y: e.clientY, id: Date.now() };
-    setCalibrationPoints(prev => [...prev, newPoint]);
-    // Remove point after animation
-    setTimeout(() => {
-      setCalibrationPoints(prev => prev.filter(p => p.id !== newPoint.id));
-    }, 1000);
-  };
-
-  // Clear calibration points when calibration ends
-  useEffect(() => {
-    if (!eyeTracking.isCalibrating) {
-      setCalibrationPoints([]);
-    }
-  }, [eyeTracking.isCalibrating]);
-
-  // Load available voices
-  useEffect(() => {
-    const loadVoices = () => {
-      const availableVoices = window.speechSynthesis.getVoices();
-      if (availableVoices.length > 0) {
-        setVoices(availableVoices);
+  const updatePrefs = useCallback((patch: Partial<Prefs>) => {
+    setPrefs((prev) => {
+      const next = { ...prev, ...patch };
+      try {
+        localStorage.setItem(PREFS_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
       }
-    };
-
-    loadVoices();
-    // Chrome loads voices asynchronously
-    window.speechSynthesis.onvoiceschanged = loadVoices;
-
-    return () => {
-      window.speechSynthesis.onvoiceschanged = null;
-    };
+      return next;
+    });
   }, []);
+  const countHelp = useCallback(() => setClickCount((c) => c + 1), []);
 
-  // Find the best voice for the language
-  const getBestVoice = (locale?: string): SpeechSynthesisVoice | null => {
-    if (voices.length === 0) return null;
-
-    // Map full language names to ISO codes
-    const localeMap: Record<string, string> = {
-      english: "en",
-      french: "fr",
-      portuguese: "pt",
-      russian: "ru",
-      japanese: "ja",
-      latvian: "lv",
-    };
-
-    const normalizedLocale = locale?.toLowerCase() || "";
-    // Check if it's a full name or already a code
-    const langCode = localeMap[normalizedLocale] || normalizedLocale.substring(0, 2);
-    
-    console.log(`Looking for voice for locale: "${locale}" -> langCode: "${langCode}"`);
-    console.log(`Available voices:`, voices.map(v => `${v.name} (${v.lang})`));
-    
-    // Filter voices that match the language (e.g., "fr-FR", "fr-CA" for French)
-    const matchingVoices = voices.filter(v => 
-      v.lang.toLowerCase().startsWith(langCode + "-") || v.lang.toLowerCase() === langCode
+  // A display change (glosses, translations, text size) changes line heights: keep the line the
+  // reader is looking at (the first words below the header) where it is instead of letting the text jump.
+  const anchorRef = useRef<{ el: HTMLElement; top: number } | null>(null);
+  const holdPosition = useCallback(() => {
+    const el = Array.from(document.querySelectorAll<HTMLElement>(".reading-text .chunk, .reading-text .word")).find(
+      (e) => e.getBoundingClientRect().bottom > HEADER_PX,
     );
+    anchorRef.current = el ? { el, top: el.getBoundingClientRect().top } : null;
+  }, []);
+  const sizeIndex = Math.min(TEXT_SCALES.length - 1, Math.max(0, Math.round(Number(prefs.size)) || 0));
+  useLayoutEffect(() => {
+    const anchor = anchorRef.current;
+    anchorRef.current = null;
+    if (anchor?.el.isConnected) window.scrollBy(0, anchor.el.getBoundingClientRect().top - anchor.top);
+  }, [glossesOn, translationsOn, sizeIndex]);
 
-    console.log(`Matching voices for ${langCode}:`, matchingVoices.map(v => v.name));
+  // Only asking for help counts as a lookup, not hiding it again.
+  const toggleGlosses = useCallback(() => {
+    holdPosition();
+    updatePrefs({ glosses: !prefs.glosses });
+    if (!prefs.glosses) countHelp();
+  }, [prefs.glosses, updatePrefs, countHelp, holdPosition]);
+  const toggleTranslations = useCallback(() => {
+    holdPosition();
+    updatePrefs({ translations: !prefs.translations });
+    if (!prefs.translations) countHelp();
+  }, [prefs.translations, updatePrefs, countHelp, holdPosition]);
 
-    if (matchingVoices.length === 0) return null;
+  // ---- Lookups: the reader reads the original and reveals the gloss of a word / phrase they do not
+  // know (click or tap), or of the whole page (← / →, G). ↑ / ↓ move the current line. Tokens are
+  // the [data-tok] elements (chunks, or words on an untranslated page); a line is a row of tokens as
+  // laid out on screen, so it is measured, not stored.
+  const articleRef = useRef<HTMLElement>(null);
+  const [shown, setShown] = useState<Set<string>>(new Set()); // chunk keys "<sentence>:<chunk>"
+  const [cursor, setCursor] = useState<string | null>(null); // a token of the current line
+  const tokens = useCallback(() => Array.from(articleRef.current?.querySelectorAll<HTMLElement>("[data-tok]") ?? []), []);
+  /** The cursor's token, or (first use) the first token fully below the header. */
+  const currentToken = useCallback(
+    (all: HTMLElement[]) =>
+      (cursor && all.find((t) => t.dataset.tok === cursor)) || all.find((t) => t.getBoundingClientRect().top >= HEADER_PX) || all[0],
+    [cursor],
+  );
+  const toggleChunk = useCallback(
+    (key: string) => {
+      setCursor(key);
+      if (!shown.has(key)) countHelp();
+      setShown((prev) => {
+        const next = new Set(prev);
+        if (!next.delete(key)) next.add(key);
+        return next;
+      });
+    },
+    [shown, countHelp],
+  );
+  const moveLine = useCallback(
+    (dir: 1 | -1) => {
+      const all = tokens();
+      const cur = currentToken(all);
+      if (!cur) return;
+      if (!cursor) return setCursor(cur.dataset.tok!); // first press: mark the line the reader is at
+      const line = lineOf(all, cur);
+      const next = all[all.indexOf(dir > 0 ? line[line.length - 1] : line[0]) + dir];
+      if (!next) return;
+      setCursor(next.dataset.tok!);
+      // Scroll by exactly one line once the current line leaves the comfortable part of the window.
+      const from = cur.getBoundingClientRect().top;
+      const to = next.getBoundingClientRect().top;
+      if (dir > 0 ? to > window.innerHeight * 0.5 : to < HEADER_PX + window.innerHeight * 0.2) {
+        const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        window.scrollBy({ top: to - from, behavior: reduced ? "auto" : "smooth" });
+      }
+    },
+    [tokens, currentToken, cursor],
+  );
+  // The current line is marked by a small dot in the left margin that slides between lines (CSS
+  // transition). Its position is measured, so it is re-done whenever the layout can change.
+  const [dotTop, setDotTop] = useState<number | null>(null);
+  // Line mode: the tokens of the current line; their glosses are shown, nothing else is.
+  const lineOn = prefs.line && model.hasGlosses && !glossesOn;
+  const [lineKeys, setLineKeys] = useState<Set<string>>(new Set());
+  const toggleLine = useCallback(() => {
+    updatePrefs({ line: !prefs.line });
+    if (prefs.line) return;
+    countHelp(); // turning the help on is one lookup; following the text line by line is not counted again
+    if (!cursor) {
+      const first = currentToken(tokens());
+      if (first) setCursor(first.dataset.tok!);
+    }
+  }, [prefs.line, updatePrefs, countHelp, cursor, currentToken, tokens]);
+  const [viewport, setViewport] = useState(0);
+  useEffect(() => {
+    const onResize = () => setViewport(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  useLayoutEffect(() => {
+    const article = articleRef.current;
+    const cur = cursor ? tokens().find((t) => t.dataset.tok === cursor) : undefined;
+    if (!article || !cur) {
+      setLineKeys((prev) => (prev.size ? new Set() : prev));
+      return setDotTop(null);
+    }
+    const words = (cur.querySelector(".chunk-src") ?? cur).getBoundingClientRect(); // the source words, not the gloss
+    setDotTop(words.top + words.height / 2 - article.getBoundingClientRect().top);
+    // A line is a row of tokens as laid out; showing a gloss never moves a word, so the row is stable.
+    const keys = lineOn ? lineOf(tokens(), cur).map((t) => t.dataset.tok!) : [];
+    setLineKeys((prev) => (prev.size === keys.length && keys.every((k) => prev.has(k)) ? prev : new Set(keys)));
+  }, [cursor, model, sizeIndex, translationsOn, viewport, tokens, lineOn]);
+  const resize = useCallback(
+    (step: number) => {
+      const next = Math.min(TEXT_SCALES.length - 1, Math.max(0, sizeIndex + step));
+      if (next === sizeIndex) return;
+      holdPosition();
+      updatePrefs({ size: next });
+    },
+    [sizeIndex, updatePrefs, holdPosition],
+  );
 
-    // Prefer premium/natural voices (often have "Premium", "Enhanced", "Natural" in name)
-    const premiumVoice = matchingVoices.find(v => 
-      /premium|enhanced|natural|neural/i.test(v.name)
-    );
-    if (premiumVoice) return premiumVoice;
+  // ---- Read aloud (src/features/audio): one segment per sentence, id "<page>:<sentence index>" ----
+  const segmentId = useCallback((i: number) => `${pageNumber}:${i}`, [pageNumber]);
+  // `group` = paragraph: its sentences are spoken together as connected prose (one clip, no gaps).
+  const ttsSegments = useMemo<AudioSegment[]>(
+    () =>
+      model.paragraphs.flatMap((p) =>
+        p.sentences
+          .filter((s) => s.source?.trim())
+          .map((s) => ({ id: segmentId(s.index), text: s.source!, lang: originalLocale ?? "en", group: p.key })),
+      ),
+    [model.paragraphs, segmentId, originalLocale],
+  );
+  const wordToChunk = useMemo(
+    () => model.sentences.map((s) => (s.chunks ? wordToGroup(s.chunks.map((c) => c.original)) : null)),
+    [model.sentences],
+  );
+  const reader = useReadAloud({
+    segments: ttsSegments,
+    bookId: demo ? undefined : bookId,
+    serverEnabled: !demo && isLoggedIn(),
+    onQueueEnd: () => {
+      if (demo || pageNumber >= totalPages) return false;
+      onNextPage(); // keep reading on the next page
+      return true;
+    },
+    // Play starts at the first sentence visible below the header.
+    startAt: () => {
+      const el = Array.from(document.querySelectorAll<HTMLElement>("[data-sentence]")).find(
+        (e) => e.getBoundingClientRect().bottom > HEADER_PX,
+      );
+      return el ? segmentId(Number(el.dataset.sentence)) : undefined;
+    },
+  });
+  const audioActive = reader.status !== "idle" && reader.status !== "error";
 
-    // Prefer local voices over remote (usually better quality)
-    const localVoice = matchingVoices.find(v => v.localService);
-    if (localVoice) return localVoice;
+  // Keep the sentence being read on screen (between the header and the dock).
+  useEffect(() => {
+    if (!reader.activeId || demo) return;
+    const el = document.querySelector<HTMLElement>(`[data-segment="${reader.activeId}"]`);
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (r.top < HEADER_PX || r.bottom > window.innerHeight - DOCK_PX) el.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [reader.activeId, demo]);
 
-    // Return first matching voice
-    return matchingVoices[0];
+  /** Enter: the natural translation of the current line's sentence. */
+  const activateSentence = (s: ReaderSentence) => {
+    if (!s.chunks && !s.translation) return;
+    setRevealed((prev) => {
+      const next = new Set(prev);
+      if (next.has(s.index)) next.delete(s.index);
+      else {
+        next.add(s.index);
+        countHelp();
+      }
+      return next;
+    });
   };
 
-  // Track translation toggle clicks and save to database (robust on mobile:
-  // flushes pending clicks on page change, tab hide/backgrounding and unmount)
+  // ---- Help-click tracking -> reading_sessions (flushed on page change, tab hide and unmount) ----
   const pendingRef = useRef<{ page: number; clicks: number } | null>(null);
-
   const flushClicks = useCallback(async () => {
     const pending = pendingRef.current;
     if (!pending || pending.clicks === 0) return;
     pendingRef.current = null;
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const today = new Date().toISOString().split('T')[0];
-
-    const { error } = await supabase
-      .from('reading_sessions')
-      .upsert({
-        user_id: user.id,
+    if (demo || !isLoggedIn()) return;
+    try {
+      await api.saveReadingSession({
         book_id: bookId,
         page_number: pending.page,
-        session_date: today,
+        session_date: new Date().toISOString().split("T")[0],
         translation_toggle_clicks: pending.clicks,
-      }, {
-        onConflict: 'user_id,book_id,page_number,session_date'
       });
-
-    if (error) {
-      console.error('Error saving click data:', error);
-      pendingRef.current = pending; // keep for a later retry
+    } catch (error) {
+      console.error("Error saving reading session:", error);
+      pendingRef.current = pending; // retried on the next flush
     }
-  }, [bookId]);
+  }, [bookId, demo]);
 
   useEffect(() => {
     if (clickCount === 0) return;
     pendingRef.current = { page: pageNumber, clicks: clickCount };
-    const timeoutId = setTimeout(() => { void flushClicks(); }, 800);
-    return () => clearTimeout(timeoutId);
+    const t = setTimeout(() => void flushClicks(), 800);
+    return () => clearTimeout(t);
   }, [clickCount, pageNumber, flushClicks]);
 
-  // Flush when the app is backgrounded / closed (common on mobile)
   useEffect(() => {
-    const onHide = () => { void flushClicks(); };
-    document.addEventListener('visibilitychange', onHide);
-    window.addEventListener('pagehide', onHide);
+    const onHide = () => void flushClicks();
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", onHide);
     return () => {
-      document.removeEventListener('visibilitychange', onHide);
-      window.removeEventListener('pagehide', onHide);
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", onHide);
       void flushClicks();
     };
   }, [flushClicks]);
 
-  // Reset states when page changes (flush the previous page's clicks first)
   useEffect(() => {
     void flushClicks();
     setClickCount(0);
-    stopAudio();
+    setRevealed(new Set());
+    setShown(new Set());
+    setCursor(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset per page only
   }, [pageNumber]);
 
-
-  // Keyboard controls for reading (WASD + arrow keys)
+  // ---- Shortcuts: ↑/↓ line, ←/→ or G all glosses, T translations, -/+ text size
+  // (Space / R / [ / ] are the player's). Pages are turned with the buttons. In the landing-page demo
+  // only the arrows work, and only while the pointer or the focus is on the demo. ----
+  const demoActive = useRef(false);
   useEffect(() => {
-    // Smooth, line-based scrolling engine
-    let targetY = window.scrollY;
-    let rafId: number | null = null;
-    let holdTimer: ReturnType<typeof setTimeout> | null = null;
-    let holdInterval: ReturnType<typeof setInterval> | null = null;
-    let heldDirection = 0;
-
-    const getLineHeight = () => {
-      const lineEls = document.querySelectorAll('[data-line-index]');
-      if (lineEls.length >= 2) {
-        const a = (lineEls[0] as HTMLElement).getBoundingClientRect();
-        const b = (lineEls[1] as HTMLElement).getBoundingClientRect();
-        const step = b.top - a.top;
-        if (step > 8) return step;
-      }
-      if (lineEls.length === 1) {
-        const h = (lineEls[0] as HTMLElement).getBoundingClientRect().height;
-        if (h > 8) return h;
-      }
-      const lh = parseFloat(getComputedStyle(document.body).lineHeight);
-      return Number.isFinite(lh) && lh > 8 ? lh : 44;
+    const onKey = (e: KeyboardEvent) => {
+      if (!isShortcutEvent(e) || e.shiftKey) return;
+      if (demo && !demoActive.current) return;
+      // e.code as well: the letter keys must work on non-Latin keyboard layouts too.
+      const key = e.key.toLowerCase();
+      if (e.key === "ArrowDown") moveLine(1);
+      else if (e.key === "ArrowUp") moveLine(-1);
+      else if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && model.hasGlosses) toggleGlosses();
+      else if (e.key === "Enter" && cursor) {
+        // the natural translation of the sentence the current line starts in
+        const sentence = model.sentences[parseInt(cursor, 10)];
+        if (sentence) activateSentence(sentence);
+      } else if (demo) return;
+      else if ((key === "g" || e.code === "KeyG") && model.hasGlosses) toggleGlosses();
+      else if ((key === "l" || e.code === "KeyL") && model.hasGlosses) toggleLine();
+      else if ((key === "t" || e.code === "KeyT") && model.hasTranslations) toggleTranslations();
+      else if (e.key === "+" || e.key === "=") resize(1);
+      else if (e.key === "-") resize(-1);
+      else return;
+      e.preventDefault();
     };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- activateSentence only uses state setters
+  }, [demo, model, cursor, toggleGlosses, toggleLine, toggleTranslations, resize, moveLine]);
 
-
-    const animate = () => {
-      const current = window.scrollY;
-      const delta = targetY - current;
-      if (Math.abs(delta) < 0.5) {
-        window.scrollTo({ top: targetY });
-        rafId = null;
-        return;
-      }
-      // ease-out: move a fraction of remaining distance each frame
-      window.scrollTo({ top: current + delta * 0.22 });
-      rafId = requestAnimationFrame(animate);
-    };
-
-    const scrollLines = (direction: number, lines = 1) => {
-      const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-      const base = rafId === null ? window.scrollY : targetY;
-      targetY = Math.min(maxY, Math.max(0, base + direction * getLineHeight() * lines));
-      if (rafId === null) rafId = requestAnimationFrame(animate);
-    };
-
-    const clearHold = () => {
-      if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
-      if (holdInterval) { clearInterval(holdInterval); holdInterval = null; }
-      heldDirection = 0;
-    };
-
-    const startHold = (direction: number) => {
-      if (heldDirection === direction) return;
-      clearHold();
-      heldDirection = direction;
-      scrollLines(direction);
-      holdTimer = setTimeout(() => {
-        holdInterval = setInterval(() => scrollLines(direction), 90);
-      }, 220);
-    };
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const key = e.key;
-      const code = e.code;
-
-      // Vertical scroll: W/S and ArrowUp/ArrowDown
-      if (key === 'w' || key === 'W' || key === 'ArrowUp' || key === 's' || key === 'S' || key === 'ArrowDown') {
-        e.preventDefault();
-        if (e.repeat) return; // our own hold engine handles repeats
-        const direction = (key === 'w' || key === 'W' || key === 'ArrowUp') ? -1 : 1;
-        startHold(direction);
-        return;
-      }
-
-      // Translation toggle: A/D and ArrowLeft/ArrowRight (both act as simple toggles)
-      if (
-        key === 'a' || key === 'A' || key === 'ArrowLeft' ||
-        key === 'd' || key === 'D' || key === 'ArrowRight'
-      ) {
-        e.preventDefault();
-        if (e.repeat) return;
-        setShowTranslations(prev => !prev);
-        setClickCount(prev => prev + 1);
-        return;
-      }
-
-      // Legacy numpad 3 (code: Numpad3) or regular 3 when numlock is off
-      if (code === 'Numpad3' || (key === '3' && e.location === 3)) {
-        e.preventDefault();
-        setShowTranslations(prev => !prev);
-        setClickCount(prev => prev + 1);
-      }
-    };
-
-    const handleKeyUp = (e: KeyboardEvent) => {
-      const key = e.key;
-      if (key === 'w' || key === 'W' || key === 'ArrowUp' || key === 's' || key === 'S' || key === 'ArrowDown') {
-        clearHold();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    window.addEventListener('blur', clearHold);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-      window.removeEventListener('blur', clearHold);
-      clearHold();
-      if (rafId !== null) cancelAnimationFrame(rafId);
-    };
-  }, []);
-
-  // ---- Bookmark: remember the top-most visible line and restore it on return ----
+  // ---- Bookmark: remember the top visible sentence of this book; restore it once ----
   const bookmarkKey = `lexmatches:bookmark:${bookId}`;
   const restoredRef = useRef(false);
-
-  // Save the top visible line (upper bound) while scrolling, and track progress
   useEffect(() => {
-    const totalLines = translationData?.lines?.length || 0;
+    if (demo) return;
+    let t: ReturnType<typeof setTimeout> | undefined;
     const save = () => {
-      const lineEls = Array.from(document.querySelectorAll('[data-line-index]')) as HTMLElement[];
-      if (lineEls.length === 0) return;
-      const threshold = 120; // header offset
-      let topLine = 0;
-      for (const el of lineEls) {
-        if (el.getBoundingClientRect().top <= threshold) {
-          topLine = Number(el.dataset.lineIndex ?? 0);
-        } else break;
-      }
+      const top = Array.from(document.querySelectorAll<HTMLElement>("[data-sentence]")).find(
+        (e) => e.getBoundingClientRect().bottom > HEADER_PX,
+      );
       try {
-        localStorage.setItem(bookmarkKey, JSON.stringify({ page: pageNumber, line: topLine }));
-      } catch { /* ignore */ }
-
-      // Update "lines left" percentage under the toggle button
-      if (totalLines > 0) {
-        const linesLeft = Math.max(0, totalLines - topLine - 1);
-        setScrollProgress(Math.round((linesLeft / totalLines) * 100));
+        localStorage.setItem(bookmarkKey, JSON.stringify({ page: pageNumber, sentence: Number(top?.dataset.sentence ?? 0) }));
+      } catch {
+        /* ignore */
       }
     };
-
-    let t: ReturnType<typeof setTimeout> | null = null;
     const onScroll = () => {
-      if (t) clearTimeout(t);
-      t = setTimeout(save, 250);
+      clearTimeout(t);
+      t = setTimeout(save, 300);
     };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    // Initial calculation once lines are rendered
-    const initialTimeout = setTimeout(save, 500);
+    window.addEventListener("scroll", onScroll, { passive: true });
     return () => {
-      window.removeEventListener('scroll', onScroll);
-      if (t) clearTimeout(t);
-      clearTimeout(initialTimeout);
+      window.removeEventListener("scroll", onScroll);
+      clearTimeout(t);
     };
-  }, [bookmarkKey, pageNumber, translationData]);
+  }, [bookmarkKey, pageNumber, demo]);
 
-  // Restore bookmark once, when the bookmarked page's lines are rendered
   useEffect(() => {
-    if (restoredRef.current) return;
-    if (!hasRenderableLines) return;
-
-    let saved: { page?: number; line?: number } | null = null;
+    if (demo || restoredRef.current || model.total === 0) return;
+    restoredRef.current = true;
+    let saved: { page?: number; sentence?: number } | null = null;
     try {
-      const raw = localStorage.getItem(bookmarkKey);
-      saved = raw ? JSON.parse(raw) : null;
-    } catch { saved = null; }
-
-    if (!saved || saved.page !== pageNumber || !saved.line || saved.line < 1) {
-      restoredRef.current = true;
-      return;
+      saved = JSON.parse(localStorage.getItem(bookmarkKey) ?? "null");
+    } catch {
+      saved = null;
     }
+    if (saved?.page !== pageNumber || !saved.sentence) return;
+    const el = document.querySelector<HTMLElement>(`[data-sentence="${saved.sentence}"]`);
+    if (el) window.scrollTo({ top: Math.max(0, el.getBoundingClientRect().top + window.scrollY - HEADER_PX - 16) });
+  }, [model.total, bookmarkKey, pageNumber, demo]);
 
-    const lineIndex = saved.line;
-    const timeout = setTimeout(() => {
-      const el = document.querySelector(`[data-line-index="${lineIndex}"]`) as HTMLElement | null;
-      if (!el) return;
-      restoredRef.current = true;
-      const top = el.getBoundingClientRect().top + window.scrollY - 100;
-      window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
-      toast.info(`Jumped back to where you left off (line ${lineIndex + 1})`);
-    }, 350);
+  // ---- Render ----
+  const activeIndex =
+    audioActive && reader.activeId?.startsWith(`${pageNumber}:`) ? Number(reader.activeId.split(":")[1]) : null;
+  const activeWord = activeIndex === null ? null : reader.wordFor(segmentId(activeIndex));
 
-    return () => clearTimeout(timeout);
-  }, [translationData, bookmarkKey, pageNumber]);
-
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      stopAudio();
-    };
-  }, []);
-
-  const handleToggleTranslations = () => {
-    setShowTranslations(!showTranslations);
-    setClickCount(prev => prev + 1);
-  };
-
-  const stopAudio = () => {
-    window.speechSynthesis.cancel();
-    utteranceRef.current = null;
-    setPlayingLineIndex(null);
-    setCurrentWordIndex(null);
-  };
-
-  const playLine = (lineIndex: number) => {
-    // If already playing this line, stop it
-    if (playingLineIndex === lineIndex) {
-      stopAudio();
-      return;
-    }
-
-    // Stop any current playback
-    stopAudio();
-
-    const line = safeLines[lineIndex];
-    if (!Array.isArray(line) || line.length === 0) return;
-
-    const lineText = line.map(pair => pair.original).join(" ");
-
-    if (!lineText.trim()) return;
-
-    // Check if Web Speech API is supported
-    if (!window.speechSynthesis) {
-      toast.error("Text-to-speech is not supported in your browser");
-      return;
-    }
-
-    const utterance = new SpeechSynthesisUtterance(lineText);
-    
-    // Set the best available voice for this language
-    const bestVoice = getBestVoice(originalLocale);
-    if (bestVoice) {
-      utterance.voice = bestVoice;
-      utterance.lang = bestVoice.lang;
-      console.log(`Using voice: ${bestVoice.name} (${bestVoice.lang})`);
-    } else {
-      // Fallback to just setting language
-      const langCode = originalLocale?.toLowerCase()?.substring(0, 2) || "en";
-      utterance.lang = langCode === "fr" ? "fr-FR" : langCode === "pt" ? "pt-BR" : langCode === "ru" ? "ru-RU" : langCode === "ja" ? "ja-JP" : "en-US";
-    }
-    
-    utterance.rate = 0.9; // Slightly slower for language learning
-    utteranceRef.current = utterance;
-
-    // Word boundary event for highlighting
-    let wordIndex = 0;
-    utterance.onboundary = (event) => {
-      if (event.name === "word") {
-        setCurrentWordIndex(wordIndex);
-        wordIndex++;
-      }
-    };
-
-    utterance.onstart = () => {
-      setPlayingLineIndex(lineIndex);
-      setCurrentWordIndex(0);
-    };
-
-    utterance.onend = () => {
-      stopAudio();
-    };
-
-    utterance.onerror = (event) => {
-      if (event.error !== "canceled") {
-        console.error("Speech error:", event.error);
-        toast.error("Failed to play audio");
-      }
-      stopAudio();
-    };
-
-    window.speechSynthesis.speak(utterance);
-  };
+  const toggles = (
+    <div className="flex items-center gap-1" role="group" aria-label="Reading help">
+      {!demo && (
+        <>
+          <Tip label="Smaller text (−)" side="top">
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-muted-foreground" aria-label="Smaller text"
+              disabled={sizeIndex === 0} onClick={() => resize(-1)} onMouseDown={(e) => e.preventDefault()}>
+              <AArrowDown />
+            </Button>
+          </Tip>
+          <Tip label="Larger text (+)" side="top">
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-muted-foreground" aria-label="Larger text"
+              disabled={sizeIndex === TEXT_SCALES.length - 1} onClick={() => resize(1)} onMouseDown={(e) => e.preventDefault()}>
+              <AArrowUp />
+            </Button>
+          </Tip>
+        </>
+      )}
+      {model.hasGlosses && (
+        <HelpToggle pressed={glossesOn} onClick={toggleGlosses} label="Glosses" tip={demo ? "Show all glosses" : "Show all glosses (G)"} icon={<WholeWord />} />
+      )}
+      {model.hasGlosses && !demo && (
+        <HelpToggle pressed={lineOn} onClick={toggleLine} label="Line" tip="Glosses for the line you are on only; move with ↑ ↓ (L)" icon={<Rows3 />} />
+      )}
+      {model.hasTranslations && (
+        <HelpToggle pressed={translationsOn}onClick={toggleTranslations} label="Translation" tip={demo ? "Sentence translations" : "Sentence translations (T)"} icon={<Languages />} />
+      )}
+      {model.hasGlosses && (
+        <Tip label="Times you asked for a translation on this page" side="top">
+          <span className="ml-1 whitespace-nowrap rounded-full bg-muted px-2.5 py-1 text-xs tabular-nums text-muted-foreground" data-testid="lookup-count">
+            {clickCount} {clickCount === 1 ? "lookup" : "lookups"}
+          </span>
+        </Tip>
+      )}
+    </div>
+  );
+  const player = ttsSegments.length > 0 && (
+    <ReadAloudBar player={reader} shortcuts={!demo} className="border-0 bg-transparent p-0 shadow-none backdrop-blur-none" />
+  );
 
   return (
-    <div ref={containerRef} className="min-h-screen bg-gradient-to-br from-background via-reading-bg to-background">
-      {desktopControlsHost && translationData && !isProcessing && !isPending && !isFailed && createPortal(
-        <>
-          <div className="flex items-center gap-1.5">
-            <Button
-              variant={showTranslations ? "default" : "outline"}
-              onClick={handleToggleTranslations}
-              size="sm"
-              title={showTranslations ? "Hide translations" : "Show translations"}
-            >
-              {showTranslations ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              <span className="hidden xl:inline ml-2">{showTranslations ? "Hide" : "Show"}</span>
-            </Button>
-            <span className="min-w-12 text-xs text-muted-foreground">{scrollProgress}% left</span>
+    <div
+      className={cn(!demo && "pb-28")}
+      style={{ "--reader-scale": demo ? 1 : TEXT_SCALES[sizeIndex] } as CSSProperties}
+      onPointerEnter={() => (demoActive.current = true)}
+      onPointerLeave={() => (demoActive.current = false)}
+      onPointerDown={() => (demoActive.current = true)}
+    >
+      <div className={cn("reader-column mx-auto w-full px-4 sm:px-6")} data-translations={translationsOn || undefined}>
+        {demo ? (
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-2 rounded-full border bg-background/80 px-2 py-1 shadow-sm">
+            {toggles}
+            {player}
           </div>
-          <div
-            className="relative"
-            onMouseEnter={() => setShowControlsTip(true)}
-            onMouseLeave={() => setShowControlsTip(false)}
-          >
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowControlsTip(prev => !prev)}
-              aria-label="Keyboard controls"
-              title="Keyboard controls"
-              className="h-9 w-9"
-            >
-              <Keyboard className="h-4 w-4" />
-            </Button>
-            {showControlsTip && !tipDismissed && (
-              <div className="absolute right-0 top-full mt-2 w-52 p-3 rounded-lg bg-popover text-popover-foreground shadow-lg border border-border text-xs space-y-2 z-30">
-                <div className="font-medium text-foreground">Reading shortcuts</div>
-                <div className="flex justify-between"><span className="text-muted-foreground">W / S / ↑ / ↓</span><span>Scroll</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">A / D / ← / →</span><span>Toggle</span></div>
-                <Button type="button" variant="ghost" size="sm" onClick={() => setTipDismissed(true)} className="h-auto w-full justify-start px-0 py-1 text-xs text-muted-foreground">
-                  Dismiss
-                </Button>
-              </div>
-            )}
-          </div>
-        </>,
-        desktopControlsHost
-      )}
-      {/* Eye tracking calibration overlay */}
-      {eyeTracking.isCalibrating && (
-        <div 
-          className="fixed inset-0 bg-background/90 z-50 cursor-crosshair"
-          onClick={handleCalibrationClick}
-        >
-          {/* Calibration points animation */}
-          {calibrationPoints.map(point => (
-            <div
-              key={point.id}
-              className="absolute pointer-events-none"
-              style={{ left: point.x, top: point.y, transform: 'translate(-50%, -50%)' }}
-            >
-              <div className="w-8 h-8 rounded-full bg-primary animate-ping" />
-              <div className="absolute inset-0 w-8 h-8 rounded-full bg-primary/50" />
-            </div>
-          ))}
-          
-          <div className="absolute inset-0 flex flex-col items-center justify-center p-8 pointer-events-none">
-            <div className="max-w-md text-center space-y-4 pointer-events-auto">
-              <ScanEye className="h-16 w-16 mx-auto text-primary animate-pulse" />
-              <h2 className="text-2xl font-bold">Calibrating Eye Tracking</h2>
-              <p className="text-muted-foreground">
-                Click different parts of the screen while looking at the cursor.
-                Click at least 9 points for best results.
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Points clicked: {calibrationPoints.length > 0 ? `${calibrationPoints.length}+` : '0'}
-              </p>
-              <div className="flex gap-2 justify-center">
-                <Button onClick={() => eyeTracking.endCalibration()} variant="default">
-                  Done Calibrating
-                </Button>
-                <Button onClick={() => eyeTracking.stopTracking()} variant="outline">
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Eye tracking controls - floating button */}
-      <div className="fixed bottom-20 right-4 z-40 flex flex-col gap-2">
-        {eyeTracking.isActive && !eyeTracking.isCalibrating && (
-          <div className="bg-primary/10 text-primary text-xs px-3 py-1 rounded-full">
-            Eye tracking active
-          </div>
-        )}
-        <Button
-          size="icon"
-          variant={eyeTracking.isActive ? "default" : "outline"}
-          onClick={() => eyeTracking.isActive ? eyeTracking.stopTracking() : eyeTracking.startTracking()}
-          disabled={eyeTracking.isLoading}
-          className="rounded-full shadow-lg h-12 w-12"
-          title={eyeTracking.isActive ? "Stop eye tracking" : "Start eye tracking for auto-scroll"}
-        >
-          {eyeTracking.isLoading ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
-          ) : (
-            <ScanEye className="h-5 w-5" />
-          )}
-        </Button>
-      </div>
-
-      {eyeTracking.error && (
-        <div className="fixed bottom-36 right-4 z-40 bg-destructive text-destructive-foreground text-sm px-3 py-2 rounded-lg max-w-xs">
-          {eyeTracking.error}
-        </div>
-      )}
-
-      <div className="flex gap-4 lg:gap-6 max-w-7xl lg:max-w-none mx-auto my-8 px-4 lg:px-0">
-        {/* Main content card */}
-        <Card className="flex-1 min-w-0 p-4 lg:p-8 shadow-soft">
-        <div className="mb-6 flex items-center gap-2 sm:gap-4">
-          <Button variant="outline" size="sm" onClick={onPrevPage} disabled={pageNumber === 1}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <span className="text-sm font-medium">
-            Page {pageNumber} of {totalPages}
-          </span>
-          <Button variant="outline" size="sm" onClick={onNextPage} disabled={pageNumber === totalPages}>
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
-
-        {/* Status banners */}
-        {isProcessing && (
-          <div className="mb-6">
-            <Card className="p-4 bg-accent/10 border-accent/20">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  {isActuallyTranslating && <Loader2 className="h-5 w-5 text-accent animate-spin" />}
-                  <div>
-                    <p className="text-sm text-muted-foreground">
-                      {isActuallyTranslating
-                        ? translationProgress?.rateLimited
-                          ? "Translation is cooling down briefly, then continuing…"
-                          : "Translating this page…"
-                        : "Translation was interrupted"}
-                    </p>
-                    {isActuallyTranslating && translationProgress && translationProgress.total > 0 && (
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {translationProgress.done} of {translationProgress.total} lines ready
-                      </p>
-                    )}
-                  </div>
-                </div>
-                {!isActuallyTranslating && (
-                  <Button variant="default" size="sm" onClick={onStartTranslation}>Resume</Button>
-                )}
-              </div>
-              {isActuallyTranslating && translationProgress && translationProgress.total > 0 && (
-                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full bg-accent transition-all duration-500"
-                    style={{ width: `${Math.min(100, (translationProgress.done / translationProgress.total) * 100)}%` }}
-                  />
-                </div>
-              )}
-            </Card>
-          </div>
-        )}
-        
-        {isPending && !showSubscriptionError && (
-          <div className="mb-6">
-            <Card className="p-4 bg-accent/10 border-accent/20">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">Ready to translate this page</p>
-                <Button variant="default" size="sm" onClick={onStartTranslation}>
-                  Start Translation
-                </Button>
-              </div>
-            </Card>
-          </div>
-        )}
-        
-        {isFailed && !showSubscriptionError && (
-          <div className="mb-6">
-            <Card className="p-4 bg-destructive/10 border-destructive/20">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-destructive">Translation failed</p>
-                <Button variant="outline" size="sm" onClick={onRetryTranslation}>
-                  Retry
-                </Button>
-              </div>
-            </Card>
-          </div>
-        )}
-
-        {hasRenderableLines ? (
-          <>
-            <div ref={linesContainerRef} className="reading-content space-y-4">
-              {safeLines.map((line, lineIndex) => !Array.isArray(line) || line.length === 0 ? null : (
-                <div key={lineIndex} data-line-index={lineIndex} className="translated-line leading-loose flex items-start gap-2">
-
-                  {/* Speaker button for each line */}
-                  <button
-                    onClick={() => playLine(lineIndex)}
-                    className="flex-shrink-0 mt-1 p-1.5 rounded-full hover:bg-accent/20 transition-colors"
-                    title={playingLineIndex === lineIndex ? "Stop" : "Listen to this line"}
-                  >
-                    {playingLineIndex === lineIndex ? (
-                      <Square className="h-4 w-4 text-primary fill-primary" />
-                    ) : (
-                      <Volume2 className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-                    )}
-                  </button>
-                  
-                  {/* Word pairs */}
-                  <div className="translated-line-pairs flex-1 min-w-0">
-                    {line.map((pair, pairIndex) => (
-                      <span 
-                        key={pairIndex} 
-                        className={`translated-word-pair inline-flex flex-col mr-3 mb-2 align-top transition-all duration-200 ${
-                          playingLineIndex === lineIndex && currentWordIndex === pairIndex
-                            ? 'bg-accent/30 rounded px-1 -mx-1'
-                            : ''
-                        }`}
-                      >
-                        <span className="translated-original text-lg font-serif text-foreground whitespace-nowrap">
-                          {pair.original}
-                        </span>
-                        <span 
-                          className={`translated-translation translation-text text-sm whitespace-nowrap transition-opacity duration-300 ${
-                            showTranslations ? 'opacity-100' : 'opacity-0'
-                          }`}
-                          style={{ visibility: showTranslations ? 'visible' : 'hidden' }}
-                        >
-                          {pair.translation}
-                        </span>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Mobile toggle button */}
-            {!isProcessing && !isPending && !isFailed && (
-              <div className="lg:hidden mt-6 sticky bottom-4">
-                <Button
-                  variant={showTranslations ? "default" : "outline"}
-                  onClick={handleToggleTranslations}
-                  size="sm"
-                  className="w-full shadow-lg"
-                >
-                  {showTranslations ? (
-                    <>
-                      <EyeOff className="h-4 w-4 mr-2" />
-                      Hide Translations
-                    </>
-                  ) : (
-                    <>
-                      <Eye className="h-4 w-4 mr-2" />
-                      Show Translations
-                    </>
-                  )}
-                </Button>
-              </div>
-            )}
-          </>
+        ) : totalPages > 1 ? (
+          <PageNav pageNumber={pageNumber} totalPages={totalPages} onPrev={onPrevPage} onNext={onNextPage} />
         ) : (
-          <>
-            <div className="reading-content space-y-4">
-              <p className="text-lg font-serif text-foreground leading-relaxed whitespace-pre-wrap">
-                {originalText}
-              </p>
-            </div>
-          </>
+          <div className="h-6" />
         )}
-        </Card>
 
-        {/* Right sidebar with images */}
-        {images.length > 0 && (
-          <Card className="hidden lg:block w-80 p-4 shadow-soft h-fit sticky top-24">
-            <h3 className="text-sm font-semibold text-muted-foreground mb-4">Page Images</h3>
-            <ScrollArea className="h-[600px] pr-4">
-              <div className="space-y-4">
-                {images.map((image, idx) => (
-                  <div key={idx} className="border border-border rounded-lg overflow-hidden">
-                    <img 
-                      src={image.data} 
-                      alt={`Page image ${idx + 1}`} 
-                      className="w-full h-auto"
-                    />
-                  </div>
-                ))}
+        {banner}
+
+        <article
+          ref={articleRef}
+          className="reading-text"
+          lang={originalLocale}
+          data-glosses={glossesOn || undefined}
+          data-translations={translationsOn || undefined}
+          aria-label={`Page ${pageNumber} text`}
+        >
+          {dotTop !== null && <span className="line-dot" data-testid="line-dot" style={{ top: dotTop }} aria-hidden />}
+          {model.paragraphs.map((p) => {
+            const paragraphTranslation = translationsOn
+              ? p.sentences.map((s) => s.translation).filter(Boolean).join(" ")
+              : "";
+            return (
+              <div key={p.key} className="para">
+                <p className="para-src">
+                  {p.sentences.map((s) => {
+                    const isActive = activeIndex === s.index;
+                    const isRevealed = revealed.has(s.index);
+                    const glossed = Boolean(s.chunks) && (glossesOn || isRevealed);
+                    const activeGroup = isActive && activeWord !== null ? (s.chunks ? wordToChunk[s.index]?.[activeWord] ?? null : activeWord) : null;
+                    return (
+                      <Fragment key={s.index}>
+                        {s.source === null ? (
+                          <span className="sentence-placeholder" aria-label="Translating…" />
+                        ) : (
+                          <span
+                            className="sentence"
+                            data-sentence={s.index}
+                            data-segment={segmentId(s.index)}
+                            data-active={isActive || undefined}
+                            data-revealed={isRevealed || undefined}
+                            data-helpable={audioActive || undefined}
+                            onClick={() => {
+                              // While listening, a tap jumps playback to this sentence.
+                              if (audioActive && s.source && !window.getSelection()?.toString()) reader.playFrom(segmentId(s.index));
+                            }}
+                          >
+                            <SentenceText s={s} glossed={glossed} shown={shown} line={lineKeys} onChunk={audioActive ? undefined : toggleChunk} activeGroup={activeGroup} cjk={cjk} />
+                          </span>
+                        )}
+                        {isRevealed && (
+                          <span className="sentence-help" data-testid="sentence-help">
+                            {s.translation && <span className="sentence-help-text">{s.translation}</span>}
+                            {s.source && (
+                              <button
+                                type="button"
+                                className="sentence-help-listen"
+                                onClick={() => reader.playFrom(segmentId(s.index))}
+                              >
+                                <Play className="h-3 w-3" aria-hidden /> Listen from here
+                              </button>
+                            )}
+                          </span>
+                        )}
+                        {!cjk && " "}
+                      </Fragment>
+                    );
+                  })}
+                </p>
+                {paragraphTranslation && <p className="para-translation">{paragraphTranslation}</p>}
               </div>
-            </ScrollArea>
-          </Card>
+            );
+          })}
+        </article>
+
+        {!demo && totalPages > 1 && (
+          <div className="mt-10 flex items-center justify-between gap-3 border-t pt-6">
+            <Button variant="outline" onClick={onPrevPage} disabled={pageNumber <= 1}>
+              <ChevronLeft /> Previous
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              {pageNumber} / {totalPages}
+            </span>
+            <Button onClick={onNextPage} disabled={pageNumber >= totalPages}>
+              Next page <ChevronRight />
+            </Button>
+          </div>
         )}
       </div>
+
+      {!demo && (toggles || player) && (
+        <div
+          className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+          data-testid="reader-dock"
+        >
+          <div className="mx-auto flex max-w-4xl items-center justify-between gap-2 px-3 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-6">
+            {toggles || <span />}
+            {player}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+/** Rough text width in em of the reading font size (CJK glyphs are full width). */
+const emWidth = (text: string, latin: number) =>
+  Array.from(text).reduce((w, ch) => w + (CJK.test(ch) ? 1 : latin), 0);
+const GLOSS_SLACK_EM = 0.6;
+/** A gloss that is at most a little wider than its chunk stays on one line (the column grows by up
+ *  to the slack). A longer one wraps under the chunk instead of pushing the next words away; the
+ *  column is then at least wide enough for the gloss to fit on two lines. */
+function glossLayout(original: string, gloss: string): { oneLine: boolean; minWidth?: string } {
+  const g = 0.66 * emWidth(gloss, 0.52);
+  if (g <= emWidth(original, 0.45) + GLOSS_SLACK_EM) return { oneLine: true };
+  return { oneLine: false, minWidth: `${(g * 0.7).toFixed(2)}em` };
+}
+
+function SentenceText({
+  s, glossed, shown, line, onChunk, activeGroup, cjk,
+}: {
+  /** Chunks of the current line while line mode is on. */
+  line: Set<string>;
+  s: ReaderSentence;
+  /** All glosses of the sentence are shown (Glosses on, or the sentence is opened). */
+  glossed: boolean;
+  /** Chunks whose gloss the reader looked up ("<sentence>:<chunk>"). */
+  shown: Set<string>;
+  /** Click / tap on a chunk; undefined while a click means something else (read-aloud). */
+  onChunk?: (key: string) => void;
+  activeGroup: number | null;
+  cjk: boolean;
+}) {
+  if (s.chunks) {
+    return (
+      <>
+        {s.chunks.map((c, k) => {
+          // The gloss is always in the DOM (hidden by CSS when off) so that the source text is in the
+          // same place whether a gloss is shown or not.
+          const layout = c.translation ? glossLayout(c.original, c.translation) : null;
+          const key = `${s.index}:${k}`;
+          const visible = glossed || shown.has(key) || line.has(key);
+          return (
+            <Fragment key={k}>
+              {k > 0 && !cjk && " "}
+              <span
+                className="chunk"
+                data-tok={key}
+                data-glossed={visible || undefined}
+                data-tts-active={k === activeGroup || undefined}
+                style={layout?.minWidth ? { minWidth: layout.minWidth } : undefined}
+                onClick={
+                  onChunk && layout
+                    ? (e) => {
+                        if (window.getSelection()?.toString()) return; // selecting text, not tapping
+                        e.stopPropagation();
+                        onChunk(key);
+                      }
+                    : undefined
+                }
+              >
+                <span className="chunk-src">{c.original}</span>
+                {layout && (
+                  <span className="chunk-gloss" data-oneline={layout.oneLine || undefined} aria-hidden={!visible || undefined}>
+                    {c.translation}
+                  </span>
+                )}
+              </span>
+            </Fragment>
+          );
+        })}
+      </>
+    );
+  }
+  // Not translated yet: words as spans so the spoken word can be highlighted.
+  let word = -1;
+  return (
+    <>
+      {s.source!.split(/(\s+)/).map((tok, k) => {
+        if (!tok) return null;
+        if (/^\s+$/.test(tok)) return " ";
+        word++;
+        return (
+          <span key={k} className="word" data-tok={`${s.index}:w${word}`} data-tts-active={word === activeGroup || undefined}>
+            {tok}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
+function HelpToggle({ pressed, onClick, label, tip, icon }: { pressed: boolean; onClick: () => void; label: string; tip: string; icon: ReactNode }) {
+  return (
+    <Tip label={tip} side="top">
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-pressed={pressed}
+        aria-label={label}
+        onClick={onClick}
+        onMouseDown={(e) => e.preventDefault() /* keep Space for play/pause */}
+        className={cn(
+          "h-9 rounded-full px-3 text-muted-foreground",
+          pressed && "bg-accent/15 text-accent hover:bg-accent/20 hover:text-accent",
+        )}
+      >
+        {icon}
+        <span className="hidden sm:inline">{label}</span>
+      </Button>
+    </Tip>
+  );
+}
+
+function PageNav({ pageNumber, totalPages, onPrev, onNext }: { pageNumber: number; totalPages: number; onPrev: () => void; onNext: () => void }) {
+  return (
+    <nav className="flex items-center justify-center gap-1 py-3 text-sm text-muted-foreground" aria-label="Pages">
+      <Tip label="Previous page">
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onPrev} disabled={pageNumber <= 1} aria-label="Previous page">
+          <ChevronLeft />
+        </Button>
+      </Tip>
+      <span className="min-w-[7rem] text-center tabular-nums" data-testid="page-indicator">
+        Page {pageNumber} of {totalPages}
+      </span>
+      <Tip label="Next page">
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onNext} disabled={pageNumber >= totalPages} aria-label="Next page">
+          <ChevronRight />
+        </Button>
+      </Tip>
+    </nav>
+  );
+}
 
 export default ReadingView;

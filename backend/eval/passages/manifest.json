@@ -1,0 +1,137 @@
+[
+ {
+  "id": "fr_candide_1",
+  "source": "fr",
+  "target": "en",
+  "book": "candide",
+  "origin": "gutenberg/fr_candide.txt",
+  "notes": "ch.1 opening; names, irony; one paragraph per line",
+  "words": 308
+ },
+ {
+  "id": "fr_candide_2",
+  "source": "fr",
+  "target": "en",
+  "book": "candide",
+  "origin": "gutenberg/fr_candide.txt",
+  "notes": "ch.1 end; recurring names (consistency with fr_candide_1)",
+  "words": 260
+ },
+ {
+  "id": "fr_verne_pdf",
+  "source": "fr",
+  "target": "en",
+  "book": "verne",
+  "origin": "pdf-digital/fr_verne_novel.pdf p.2 via PyMuPDF",
+  "notes": "real extraction noise: hard wraps, U+2010 hyphenation, footnote digits, detached drop cap",
+  "words": 306
+ },
+ {
+  "id": "fr_miserables_1",
+  "source": "fr",
+  "target": "en",
+  "book": "miserables",
+  "origin": "gutenberg/fr_miserables_t1.txt",
+  "notes": "long literary sentences; hard-wrapped lines with blank-line paragraphs",
+  "words": 307
+ },
+ {
+  "id": "fr_miserables_2",
+  "source": "fr",
+  "target": "en",
+  "book": "miserables",
+  "origin": "gutenberg/fr_miserables_t1.txt",
+  "notes": "recurring names (Myriel, Baptistine, Magloire)",
+  "words": 307
+ },
+ {
+  "id": "fr_mousquetaires_ru",
+  "source": "fr",
+  "target": "ru",
+  "book": "mousquetaires",
+  "origin": "gold/ws_fr_mousquetaires.txt",
+  "notes": "fr->ru; dialogue with em dashes / guillemets; register",
+  "words": 280
+ },
+ {
+  "id": "de_verwandlung_1",
+  "source": "de",
+  "target": "en",
+  "book": "verwandlung",
+  "origin": "derived/de_verwandlung_hardwrap_noblank.txt",
+  "notes": "hard-wrapped, no blank lines between paragraphs, -- dashes, guillemets",
+  "words": 309
+ },
+ {
+  "id": "de_verwandlung_2",
+  "source": "de",
+  "target": "en",
+  "book": "verwandlung",
+  "origin": "derived/de_verwandlung_hardwrap_noblank.txt",
+  "notes": "recurring Gregor/Prokurist (consistency); starts mid-paragraph",
+  "words": 281
+ },
+ {
+  "id": "ru_dama_1",
+  "source": "ru",
+  "target": "en",
+  "book": "dama",
+  "origin": "gold/ws_ru_dama.txt",
+  "notes": "names (Gurov), Yalta, quoted inner speech with em dash",
+  "words": 327
+ },
+ {
+  "id": "ru_dama_2",
+  "source": "ru",
+  "target": "en",
+  "book": "dama",
+  "origin": "gold/ws_ru_dama.txt",
+  "notes": "Anna Sergeyevna + Gurov recurring; dialogue",
+  "words": 316
+ },
+ {
+  "id": "pt_casmurro",
+  "source": "pt",
+  "target": "en",
+  "book": "casmurro",
+  "origin": "gutenberg/pt_dom_casmurro.epub",
+  "notes": "ch.1 opening: first-person, idiom, dialogue",
+  "words": 307
+ },
+ {
+  "id": "lv_lacplesis",
+  "source": "lv",
+  "target": "en",
+  "book": "lacplesis",
+  "origin": "pdf-digital/lv_lacplesis_docx.pdf p.1 via PyMuPDF",
+  "notes": "verse (one line per verse), heading/table noise at top",
+  "words": 174
+ },
+ {
+  "id": "ja_rashomon",
+  "source": "ja",
+  "target": "en",
+  "book": "rashomon",
+  "origin": "gold/aozora_ja_rashomon.txt",
+  "notes": "Japanese, no spaces; archaic vocabulary",
+  "words": 4
+ },
+ {
+  "id": "en_austen_1_lv",
+  "source": "en",
+  "target": "lv",
+  "book": "austen",
+  "origin": "pdf-digital/src/pg1342_en_austen.txt",
+  "notes": "en->lv; dialogue in curly quotes; Mr./Mrs. names (inflection)",
+  "words": 303
+ },
+ {
+  "id": "en_austen_2_lv",
+  "source": "en",
+  "target": "lv",
+  "book": "austen",
+  "origin": "pdf-digital/src/pg1342_en_austen.txt",
+  "notes": "recurring Mr. Bennet / Bingley (consistency)",
+  "words": 285
+ }
+]

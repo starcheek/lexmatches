@@ -1,281 +1,117 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { Progress } from "@/components/ui/progress";
-import { BookOpen, Plus, LogOut, Upload as UploadIcon, Loader2, TrendingDown, Settings, FileText } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, BookOpen, FileText, Link2, Loader2, LogOut, MoreVertical, Settings, Trash2, TrendingDown, Upload as UploadIcon } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
+import { api, isLoggedIn, type Book, type User } from "@/lib/api";
+import { LANGUAGES, languageLabel } from "@/lib/languages";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Tip } from "@/components/Tip";
+import { cn } from "@/lib/utils";
 
-import { splitPdf, getPdfPageCount, MAX_PAGES } from "@/lib/pdfSplitter";
-
-const uploadSchema = z.object({
-  title: z.string().trim().min(1, "Title is required").max(200, "Title must be less than 200 characters"),
-  file: z.instanceof(File).refine(
-    (file) => file.type === "application/pdf",
-    "File must be a PDF"
-  ).refine(
-    (file) => file.size <= 100 * 1024 * 1024, // 100MB limit for large PDFs
-    "File size must be less than 100MB"
-  ),
+type AddKind = "file" | "text" | "url";
+const MAX_TEXT = 1_000_000; // server limit (app.ingest MAX_TEXT_CHARS)
+// The server sniffs the real format from the content; this list only guides the file picker.
+const FILE_EXTENSIONS = [".pdf", ".epub", ".fb2", ".docx", ".odt", ".rtf", ".txt", ".md", ".html", ".htm"];
+const FILE_FORMATS = "PDF, EPUB, FB2, DOCX, ODT, RTF, TXT, Markdown, HTML";
+const EXTENSION = /\.(pdf|epub|fb2|docx|odt|rtf|txt|md|markdown|html?|xhtml)$/i;
+const titleSchema = z.string().trim().min(1, "Title is required").max(200, "Title must be less than 200 characters");
+const fileSchema = z.object({
+  title: titleSchema,
+  file: z
+    .instanceof(File)
+    .refine((f) => !/\.(mobi|azw3?|kfx)$/i.test(f.name), "Kindle files (MOBI, AZW3) are not supported. Convert the book to EPUB first.")
+    .refine((f) => f.size <= 100 * 1024 * 1024, "File size must be less than 100 MB"),
 });
-
 const textSchema = z.object({
-  title: z.string().trim().min(1, "Title is required").max(200, "Title must be less than 200 characters"),
-  text: z.string().trim().min(10, "Text must be at least 10 characters").max(10000, "Text must be less than 10,000 characters"),
+  title: titleSchema,
+  text: z.string().trim().min(10, "Text must be at least 10 characters").max(MAX_TEXT, "Text must be less than 1,000,000 characters"),
 });
+const urlSchema = z.object({
+  title: z.string().trim().max(200, "Title must be less than 200 characters"),
+  url: z.string().trim().regex(/^https?:\/\/\S+\.\S+/i, "Enter a link that starts with http:// or https://"),
+});
+const ADD: Record<AddKind, { title: string; description: string; submit: string }> = {
+  file: {
+    title: "Upload a book",
+    description: `${FILE_FORMATS}. Scanned PDFs without a text layer, Kindle files and DRM-protected books are not supported.`,
+    submit: "Upload",
+  },
+  text: { title: "Paste Text", description: "An article, a chapter or a whole book as plain text.", submit: "Add text" },
+  url: { title: "Import a web page", description: "We fetch the page and keep the article text; menus, ads and comments are removed.", submit: "Import page" },
+};
 
-interface Book {
-  id: string;
-  title: string;
-  original_locale: string;
-  target_locale: string;
-  status: string;
-  total_pages: number;
-  created_at: string;
-}
+const STATUS_LABEL: Record<Book["status"], string> = {
+  pending: "Queued",
+  processing: "Preparing",
+  completed: "Ready",
+  failed: "Failed",
+};
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
-  const [books, setBooks] = useState<Book[]>([]);
-  const [user, setUser] = useState<any>(null);
-  const [textUploadOpen, setTextUploadOpen] = useState(false);
-  const [pdfUploadOpen, setPdfUploadOpen] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0, status: '' });
-  
-  // Upload form state - Text
-  const [textTitle, setTextTitle] = useState("");
-  const [pastedText, setPastedText] = useState("");
-  const [textOriginalLocale, setTextOriginalLocale] = useState("french");
-  const [textTargetLocale, setTextTargetLocale] = useState("english");
-  
-  // Upload form state - PDF
-  const [pdfTitle, setPdfTitle] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [pdfOriginalLocale, setPdfOriginalLocale] = useState("french");
-  const [pdfTargetLocale, setPdfTargetLocale] = useState("english");
+  const queryClient = useQueryClient();
+  const [user, setUser] = useState<User | null>(null);
+  const [dialog, setDialog] = useState<AddKind | null>(null);
+  const [toDelete, setToDelete] = useState<Book | null>(null);
 
   useEffect(() => {
-    checkUser();
-    
-    // Subscribe to realtime updates for books
-    const channel = supabase
-      .channel('books-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'books'
-        },
-        (payload) => {
-          console.log('Book change received:', payload);
-          fetchBooks();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  const checkUser = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    if (!session) {
+    if (!isLoggedIn()) {
       navigate("/auth");
       return;
     }
+    api.me().then(setUser).catch(() => navigate("/auth"));
+  }, [navigate]);
 
-    setUser(session.user);
-    await fetchBooks();
-    setLoading(false);
-  };
+  // Poll while a book is still being split into pages.
+  const booksQuery = useQuery({
+    queryKey: ["books"],
+    queryFn: api.listBooks,
+    enabled: isLoggedIn(),
+    refetchInterval: (q) => (q.state.data?.some((b) => b.status === "pending" || b.status === "processing") ? 2000 : false),
+  });
+  const books: Book[] = booksQuery.data ?? [];
 
-  const fetchBooks = async () => {
-    const { data, error } = await supabase
-      .from("books")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error(error);
-    } else {
-      setBooks(data || []);
-    }
-  };
-
-  const handleTextUpload = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!pastedText || !textTitle || !user) return;
-
-    const validation = textSchema.safeParse({ title: textTitle, text: pastedText });
-    if (!validation.success) {
-      const errors = validation.error.errors.map(err => err.message).join(", ");
-      toast.error(errors);
-      return;
-    }
-
-    setUploading(true);
-
-    try {
-      const { data: book, error: bookError } = await supabase
-        .from("books")
-        .insert({
-          title: textTitle,
-          original_locale: textOriginalLocale,
-          target_locale: textTargetLocale,
-          user_id: user.id,
-          status: 'completed',
-          total_pages: 1
-        })
-        .select()
-        .single();
-
-      if (bookError) throw bookError;
-
-      const { error: pageError } = await supabase
-        .from("pages")
-        .insert({
-          book_id: book.id,
-          page_number: 1,
-          original_text: pastedText,
-          status: 'pending'
-        });
-
-      if (pageError) throw pageError;
-
-      toast.success("Text uploaded successfully!");
-      setTextUploadOpen(false);
-      setTextTitle("");
-      setPastedText("");
-      
-    } catch (error: any) {
-      console.error('Upload error:', error);
-      toast.error(error.message || "Failed to upload text");
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleUpload = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!file || !pdfTitle || !user) return;
-
-    const validation = uploadSchema.safeParse({ title: pdfTitle, file });
-    if (!validation.success) {
-      const errors = validation.error.errors.map(err => err.message).join(", ");
-      toast.error(errors);
-      return;
-    }
-
-    setUploading(true);
-    setUploadProgress({ current: 0, total: 0, status: 'Analyzing PDF...' });
-
-    try {
-      // Split PDF if needed
-      const parts = await splitPdf(file);
-      const totalParts = parts.length;
-      
-      if (totalParts > 1) {
-        toast.info(`Large PDF detected! Splitting into ${totalParts} parts (${MAX_PAGES} pages each)`, {
-          duration: 5000
-        });
-      }
-
-      setUploadProgress({ current: 0, total: totalParts, status: `Uploading ${totalParts} part(s)...` });
-
-      for (let i = 0; i < parts.length; i++) {
-        const part = parts[i];
-        const partTitle = totalParts > 1 
-          ? `${pdfTitle} [Part ${part.partNumber}]`
-          : pdfTitle;
-        
-        setUploadProgress({ 
-          current: i, 
-          total: totalParts, 
-          status: totalParts > 1 
-            ? `Uploading Part ${i + 1} of ${totalParts}...` 
-            : 'Uploading...'
-        });
-
-        const { data: book, error: bookError } = await supabase
-          .from("books")
-          .insert({
-            title: partTitle,
-            original_locale: pdfOriginalLocale,
-            target_locale: pdfTargetLocale,
-            user_id: user.id,
-            status: 'pending'
-          })
-          .select()
-          .single();
-
-        if (bookError) throw bookError;
-
-        const filePath = `${user.id}/${book.id}.pdf`;
-        const { error: storageError } = await supabase.storage
-          .from('books')
-          .upload(filePath, part.blob);
-
-        if (storageError) throw storageError;
-
-        setUploadProgress({ 
-          current: i, 
-          total: totalParts, 
-          status: totalParts > 1 
-            ? `Processing Part ${i + 1} of ${totalParts}...` 
-            : 'Processing...'
-        });
-
-        const { error: functionError } = await supabase.functions.invoke('process-pdf', {
-          body: { bookId: book.id }
-        });
-
-        if (functionError) throw functionError;
-      }
-
-      setUploadProgress({ current: totalParts, total: totalParts, status: 'Complete!' });
-      
-      if (totalParts > 1) {
-        toast.success(`Book split into ${totalParts} parts and uploaded successfully!`);
-      } else {
-        toast.success("Book uploaded successfully!");
-      }
-      
-      setPdfUploadOpen(false);
-      setPdfTitle("");
-      setFile(null);
-      setUploadProgress({ current: 0, total: 0, status: '' });
-      
-    } catch (error: any) {
-      console.error('Upload error:', error);
-      toast.error(error.message || "Failed to upload book");
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
+  const handleSignOut = () => {
+    api.signOut();
     navigate("/");
   };
 
-  if (loading) {
+  const deleteBook = async (book: Book) => {
+    try {
+      await api.deleteBook(book.id);
+      queryClient.setQueryData<Book[]>(["books"], (prev) => prev?.filter((b) => b.id !== book.id));
+      try {
+        localStorage.removeItem(`lexmatches:bookmark:${book.id}`);
+        localStorage.removeItem(`lexmatches:auto-translate:${book.id}`);
+      } catch {
+        /* ignore */
+      }
+      toast.success(`Deleted “${book.title}”`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not delete the book");
+    } finally {
+      setToDelete(null);
+    }
+  };
+
+  if (!user || booksQuery.isPending) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="text-center">
-          <BookOpen className="h-12 w-12 text-accent mx-auto mb-4 animate-pulse" />
-          <p className="text-muted-foreground">Loading your library...</p>
+          <BookOpen className="mx-auto mb-4 h-10 w-10 animate-pulse text-accent" />
+          <p className="text-muted-foreground">Loading your library…</p>
         </div>
       </div>
     );
@@ -284,323 +120,296 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-reading-bg to-background">
       <header className="border-b border-border/50 bg-card/50 backdrop-blur">
-        <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <BookOpen className="h-8 w-8 text-accent" />
-            <h1 className="text-2xl font-serif font-bold text-primary">LexMatches</h1>
+        <div className="container mx-auto flex items-center justify-between gap-2 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <BookOpen className="h-7 w-7 text-accent" />
+            <span className="font-serif text-2xl font-bold text-primary">LexMatches</span>
           </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-muted-foreground hidden sm:inline">{user?.email}</span>
-            <Button variant="ghost" size="sm" onClick={() => navigate("/settings")}>
-              <Settings className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">Settings</span>
+          <nav className="flex items-center gap-1 sm:gap-2">
+            <span className="mr-2 hidden text-sm text-muted-foreground md:inline">{user.email}</span>
+            <Button variant="ghost" size="sm" onClick={() => navigate("/progress")} aria-label="Progress">
+              <TrendingDown /> <span className="hidden sm:inline">Progress</span>
             </Button>
-            <Button variant="outline" size="sm" onClick={handleSignOut}>
-              <LogOut className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">Sign Out</span>
+            <Button variant="ghost" size="sm" onClick={() => navigate("/settings")} aria-label="Settings">
+              <Settings /> <span className="hidden sm:inline">Settings</span>
             </Button>
-          </div>
+            <Tip label="Sign out">
+              <Button variant="ghost" size="icon" onClick={handleSignOut} aria-label="Sign out">
+                <LogOut />
+              </Button>
+            </Tip>
+          </nav>
         </div>
       </header>
 
       <main className="container mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h2 className="text-3xl font-serif font-bold text-primary mb-2">Your Library</h2>
-          <p className="text-muted-foreground">Upload and manage your language learning materials</p>
-        </div>
-
-
-
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {/* Progress Card */}
-          <Card 
-            className="border-2 border-accent/30 bg-gradient-to-br from-accent/5 to-accent/10 hover:shadow-soft transition-all cursor-pointer group"
-            onClick={() => navigate("/progress")}
-          >
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <div className="h-16 w-16 rounded-full bg-accent/20 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                <TrendingDown className="h-8 w-8 text-accent" />
-              </div>
-              <h3 className="text-lg font-semibold mb-2 text-center">Check Your Progress!</h3>
-              <p className="text-sm text-muted-foreground text-center">
-                See how your reading independence improves over time
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* Combined Upload Card */}
-          <Card className="border-dashed border-2 border-border hover:border-accent transition-colors group overflow-hidden">
-            <CardContent className="p-0">
-              {/* Top half - Paste Text */}
-              <Dialog open={textUploadOpen} onOpenChange={setTextUploadOpen}>
-                <DialogTrigger asChild>
-                  <div className="flex flex-col items-center justify-center py-8 border-b border-dashed border-border hover:bg-accent/5 transition-colors cursor-pointer">
-                    <div className="h-12 w-12 rounded-full bg-accent/10 flex items-center justify-center mb-3 group-hover:bg-accent/20 transition-colors">
-                      <FileText className="h-6 w-6 text-accent" />
-                    </div>
-                    <h3 className="text-base font-semibold mb-1">Paste Text</h3>
-                    <p className="text-xs text-muted-foreground text-center px-4">
-                      Quick translate from clipboard
-                    </p>
-                  </div>
-                </DialogTrigger>
-                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                  <DialogHeader>
-                    <DialogTitle className="font-serif">Paste Text</DialogTitle>
-                    <DialogDescription>
-                      Paste text directly for translation
-                    </DialogDescription>
-                  </DialogHeader>
-
-                  <form onSubmit={handleTextUpload} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="text-title">Title</Label>
-                      <Input
-                        id="text-title"
-                        value={textTitle}
-                        onChange={(e) => setTextTitle(e.target.value)}
-                        placeholder="Content title"
-                        disabled={uploading}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="pasted-text">Text (Max 10,000 characters)</Label>
-                      <Textarea
-                        id="pasted-text"
-                        value={pastedText}
-                        onChange={(e) => setPastedText(e.target.value)}
-                        placeholder="Paste your text here..."
-                        className="min-h-[150px] font-serif"
-                        disabled={uploading}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        {pastedText.length} / 10,000 characters
-                      </p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="text-original">Original Language</Label>
-                        <Select value={textOriginalLocale} onValueChange={setTextOriginalLocale} disabled={uploading}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="english">English</SelectItem>
-                            <SelectItem value="french">French</SelectItem>
-                            <SelectItem value="spanish">Spanish</SelectItem>
-                            <SelectItem value="german">German</SelectItem>
-                            <SelectItem value="italian">Italian</SelectItem>
-                            <SelectItem value="portuguese">Portuguese</SelectItem>
-                            <SelectItem value="russian">Russian</SelectItem>
-                            <SelectItem value="japanese">Japanese</SelectItem>
-                            <SelectItem value="latvian">Latvian</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="text-target">Target Language</Label>
-                        <Select value={textTargetLocale} onValueChange={setTextTargetLocale} disabled={uploading}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="english">English</SelectItem>
-                            <SelectItem value="french">French</SelectItem>
-                            <SelectItem value="spanish">Spanish</SelectItem>
-                            <SelectItem value="german">German</SelectItem>
-                            <SelectItem value="italian">Italian</SelectItem>
-                            <SelectItem value="portuguese">Portuguese</SelectItem>
-                            <SelectItem value="russian">Russian</SelectItem>
-                            <SelectItem value="japanese">Japanese</SelectItem>
-                            <SelectItem value="latvian">Latvian</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <Button 
-                      type="submit" 
-                      className="w-full" 
-                      disabled={uploading || !pastedText || !textTitle}
-                    >
-                      {uploading ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Uploading...
-                        </>
-                      ) : (
-                        <>
-                          <FileText className="h-4 w-4 mr-2" />
-                          Upload Text
-                        </>
-                      )}
-                    </Button>
-                  </form>
-                </DialogContent>
-              </Dialog>
-              
-              {/* Bottom half - Upload PDF */}
-              <Dialog open={pdfUploadOpen} onOpenChange={setPdfUploadOpen}>
-                <DialogTrigger asChild>
-                  <div className="flex flex-col items-center justify-center py-8 hover:bg-accent/5 transition-colors cursor-pointer">
-                    <div className="h-12 w-12 rounded-full bg-accent/10 flex items-center justify-center mb-3 group-hover:bg-accent/20 transition-colors">
-                      <UploadIcon className="h-6 w-6 text-accent" />
-                    </div>
-                    <h3 className="text-base font-semibold mb-1">Upload PDF</h3>
-                    <p className="text-xs text-muted-foreground text-center px-4">
-                      Add a document to read
-                    </p>
-                  </div>
-                </DialogTrigger>
-                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                  <DialogHeader>
-                    <DialogTitle className="font-serif">Upload PDF</DialogTitle>
-                    <DialogDescription>
-                      Upload a PDF document for translation
-                    </DialogDescription>
-                  </DialogHeader>
-
-                  <form onSubmit={handleUpload} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="pdf-title">Title</Label>
-                      <Input
-                        id="pdf-title"
-                        value={pdfTitle}
-                        onChange={(e) => setPdfTitle(e.target.value)}
-                        placeholder="Book title"
-                        disabled={uploading}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="file">PDF File (Max 150 pages)</Label>
-                      <Input
-                        id="file"
-                        type="file"
-                        accept=".pdf"
-                        onChange={(e) => setFile(e.target.files?.[0] || null)}
-                        disabled={uploading}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Large PDFs are automatically split into {MAX_PAGES}-page parts.
-                      </p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="pdf-original">Original Language</Label>
-                        <Select value={pdfOriginalLocale} onValueChange={setPdfOriginalLocale} disabled={uploading}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="english">English</SelectItem>
-                            <SelectItem value="french">French</SelectItem>
-                            <SelectItem value="spanish">Spanish</SelectItem>
-                            <SelectItem value="german">German</SelectItem>
-                            <SelectItem value="italian">Italian</SelectItem>
-                            <SelectItem value="portuguese">Portuguese</SelectItem>
-                            <SelectItem value="russian">Russian</SelectItem>
-                            <SelectItem value="japanese">Japanese</SelectItem>
-                            <SelectItem value="latvian">Latvian</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="pdf-target">Target Language</Label>
-                        <Select value={pdfTargetLocale} onValueChange={setPdfTargetLocale} disabled={uploading}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="english">English</SelectItem>
-                            <SelectItem value="french">French</SelectItem>
-                            <SelectItem value="spanish">Spanish</SelectItem>
-                            <SelectItem value="german">German</SelectItem>
-                            <SelectItem value="italian">Italian</SelectItem>
-                            <SelectItem value="portuguese">Portuguese</SelectItem>
-                            <SelectItem value="russian">Russian</SelectItem>
-                            <SelectItem value="japanese">Japanese</SelectItem>
-                            <SelectItem value="latvian">Latvian</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    
-                    {/* Upload progress indicator */}
-                    {uploading && uploadProgress.total > 0 && (
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-sm text-muted-foreground">
-                          <span>{uploadProgress.status}</span>
-                          <span>{uploadProgress.current}/{uploadProgress.total}</span>
-                        </div>
-                        <Progress 
-                          value={(uploadProgress.current / uploadProgress.total) * 100} 
-                          className="h-2"
-                        />
-                      </div>
-                    )}
-                    
-                    <Button 
-                      type="submit" 
-                      className="w-full" 
-                      disabled={uploading || !file || !pdfTitle}
-                    >
-                      {uploading ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          {uploadProgress.status || 'Uploading...'}
-                        </>
-                      ) : (
-                        <>
-                          <UploadIcon className="h-4 w-4 mr-2" />
-                          Upload PDF
-                        </>
-                      )}
-                    </Button>
-                  </form>
-                </DialogContent>
-              </Dialog>
-            </CardContent>
-          </Card>
-
-          {books.map((book) => (
-            <Card 
-              key={book.id} 
-              className="hover:shadow-soft transition-shadow cursor-pointer"
-              onClick={() => navigate(`/read/${book.id}`)}
-            >
-              <CardHeader>
-                <CardTitle className="font-serif">{book.title}</CardTitle>
-                <CardDescription>
-                  {book.original_locale} → {book.target_locale}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-muted-foreground">{book.total_pages} pages</span>
-                  <span className={`px-2 py-1 rounded-full text-xs ${
-                    book.status === 'completed' ? 'bg-accent/10 text-accent' :
-                    book.status === 'processing' ? 'bg-secondary text-secondary-foreground' :
-                    book.status === 'failed' ? 'bg-destructive/10 text-destructive' :
-                    'bg-muted text-muted-foreground'
-                  }`}>
-                    {book.status}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <h1 className="mb-6 font-serif text-3xl font-bold text-primary">Your Library</h1>
 
         {books.length === 0 && (
-          <div className="text-center py-12">
-            <UploadIcon className="h-16 w-16 text-muted-foreground mx-auto mb-4 opacity-50" />
-            <p className="text-muted-foreground mb-2">No books yet</p>
-            <p className="text-sm text-muted-foreground">Upload your first document to get started</p>
+          <div className="mb-6 rounded-lg border border-dashed bg-card/60 p-6 text-center">
+            <p className="font-medium">No books yet</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Upload a book ({FILE_FORMATS}), paste a text or import a web page in the language you are learning. You read the original; translations are there when you need them.
+            </p>
           </div>
         )}
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-3 gap-2 rounded-lg border-2 border-dashed border-border p-3 sm:grid-cols-1">
+            <AddButton icon={<UploadIcon />} title="Upload a book" subtitle="PDF, EPUB, DOCX, FB2, TXT…" onClick={() => setDialog("file")} />
+            <AddButton icon={<FileText />} title="Paste Text" subtitle="An article or chapter" onClick={() => setDialog("text")} />
+            <AddButton icon={<Link2 />} title="Web page" subtitle="Import from a link" onClick={() => setDialog("url")} />
+          </div>
+
+          {books.map((book) => (
+            <BookCard key={book.id} book={book} onOpen={() => navigate(`/read/${book.id}`)} onDelete={() => setToDelete(book)} />
+          ))}
+        </div>
       </main>
+
+      <AddBookDialog
+        kind={dialog}
+        onClose={() => setDialog(null)}
+        onCreated={async (book) => {
+          await queryClient.invalidateQueries({ queryKey: ["books"] });
+          setDialog(null);
+          if (book.status === "completed") navigate(`/read/${book.id}`);
+          else toast.success("Book uploaded. Preparing the pages…");
+        }}
+      />
+
+      <AlertDialog open={toDelete !== null} onOpenChange={(open) => !open && setToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete “{toDelete?.title}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The book, its translations, saved audio and reading statistics are removed. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => toDelete && void deleteBook(toDelete)}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
+
+function AddButton({ icon, title, subtitle, onClick }: { icon: React.ReactNode; title: string; subtitle: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex flex-col items-center justify-center gap-1 rounded-md p-2 text-center sm:p-3 transition-colors hover:bg-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&_svg]:h-5 [&_svg]:w-5"
+    >
+      <span className="mb-1 flex h-10 w-10 items-center justify-center rounded-full bg-accent/10 text-accent">{icon}</span>
+      <span className="font-semibold">{title}</span>
+      <span className="text-xs text-muted-foreground">{subtitle}</span>
+    </button>
+  );
+}
+
+function BookCard({ book, onOpen, onDelete }: { book: Book; onOpen: () => void; onDelete: () => void }) {
+  const busy = book.status === "pending" || book.status === "processing";
+  const failed = book.status === "failed";
+  return (
+    <div
+      className="group relative flex flex-col rounded-lg border bg-card p-5 shadow-sm transition-shadow hover:shadow-soft"
+      data-testid="book-card"
+      data-status={book.status}
+    >
+      <button
+        type="button"
+        onClick={onOpen}
+        className="text-left after:absolute after:inset-0 after:rounded-lg focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring"
+      >
+        <h2 className="pr-8 font-serif text-xl font-semibold leading-snug text-card-foreground">{book.title}</h2>
+      </button>
+      <p className="mt-1 text-sm text-muted-foreground">
+        {languageLabel(book.original_locale)} → {languageLabel(book.target_locale)}
+      </p>
+      {failed && book.error && (
+        <p className="mt-3 flex items-start gap-1.5 text-sm text-destructive">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> {book.error}
+        </p>
+      )}
+      <div className="mt-auto flex items-center justify-between pt-5 text-sm">
+        <span className="text-muted-foreground">
+          {book.total_pages > 0
+            ? `${book.total_pages} page${book.total_pages === 1 ? "" : "s"}${book.last_read_page > 1 ? ` · at page ${book.last_read_page}` : ""}`
+            : busy
+              ? "Extracting pages…"
+              : ""}
+        </span>
+        <span
+          className={cn(
+            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs",
+            book.status === "completed" && "bg-accent/10 text-accent",
+            busy && "bg-secondary text-secondary-foreground",
+            failed && "bg-destructive/10 text-destructive",
+          )}
+        >
+          {busy && <Loader2 className="h-3 w-3 animate-spin" />}
+          {STATUS_LABEL[book.status]}
+        </span>
+      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="absolute right-2 top-2 z-10 h-8 w-8 text-muted-foreground"
+            aria-label={`Actions for ${book.title}`}
+          >
+            <MoreVertical />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={onDelete}>
+            <Trash2 /> Delete book
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+function LanguagePicker({ id, label, value, onChange, disabled }: { id: string; label: string; value: string; onChange: (v: string) => void; disabled?: boolean }) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      <Select value={value} onValueChange={onChange} disabled={disabled}>
+        <SelectTrigger id={id}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {LANGUAGES.map((l) => (
+            <SelectItem key={l.value} value={l.value}>
+              {l.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function AddBookDialog({ kind, onClose, onCreated }: { kind: AddKind | null; onClose: () => void; onCreated: (b: Book) => Promise<void> }) {
+  const [title, setTitle] = useState("");
+  const [text, setText] = useState("");
+  const [url, setUrl] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [from, setFrom] = useState("french");
+  const [to, setTo] = useState("english");
+  const [busy, setBusy] = useState(false);
+  const [shown, setShown] = useState<AddKind>("file"); // keeps the content while the dialog closes
+
+  useEffect(() => {
+    if (kind === null) {
+      setTitle("");
+      setText("");
+      setUrl("");
+      setFile(null);
+    } else setShown(kind);
+  }, [kind]);
+  const k = kind ?? shown;
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const check =
+      k === "file" ? fileSchema.safeParse({ title, file }) : k === "text" ? textSchema.safeParse({ title, text }) : urlSchema.safeParse({ title, url });
+    if (!check.success) return void toast.error(check.error.errors.map((x) => x.message).join(", "));
+    setBusy(true);
+    try {
+      const book =
+        k === "file"
+          ? await api.uploadBook(file!, title.trim(), from, to)
+          : k === "text"
+            ? await api.createTextBook(title.trim(), from, to, text)
+            : await api.importUrl(url.trim(), title.trim(), from, to);
+      await onCreated(book);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Upload failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const incomplete = k === "file" ? !file || !title.trim() : k === "text" ? !text.trim() || !title.trim() : !url.trim();
+
+  return (
+    <Dialog open={kind !== null} onOpenChange={(open) => !open && !busy && onClose()}>
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="font-serif">{ADD[k].title}</DialogTitle>
+          <DialogDescription>{ADD[k].description}</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={submit} className="space-y-4">
+          {k === "file" && (
+            <div className="space-y-2">
+              <Label htmlFor="file">File (max 100 MB)</Label>
+              <Input
+                id="file"
+                type="file"
+                accept={FILE_EXTENSIONS.join(",")}
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null;
+                  setFile(f);
+                  if (f && !title) setTitle(f.name.replace(EXTENSION, ""));
+                }}
+                disabled={busy}
+              />
+            </div>
+          )}
+          {k === "url" && (
+            <div className="space-y-2">
+              <Label htmlFor="page-url">Link</Label>
+              <Input id="page-url" type="url" inputMode="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" disabled={busy} />
+            </div>
+          )}
+          <div className="space-y-2">
+            <Label htmlFor={`${k}-title`}>{k === "url" ? "Title (optional: the page's own title is used)" : "Title"}</Label>
+            <Input
+              id={`${k}-title`}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={k === "file" ? "Book title" : k === "text" ? "e.g. Le Petit Prince, chapter 1" : ""}
+              disabled={busy}
+            />
+          </div>
+          {k === "text" && (
+            <div className="space-y-2">
+              <Label htmlFor="pasted-text">Text</Label>
+              <Textarea
+                id="pasted-text"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder="Paste your text here…"
+                className="min-h-[180px] font-serif text-base"
+                disabled={busy}
+              />
+              <p className={cn("text-xs", text.length > MAX_TEXT ? "text-destructive" : "text-muted-foreground")}>
+                {text.length.toLocaleString()} characters{text.length > MAX_TEXT ? " (max 1,000,000)" : ""}
+              </p>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-4">
+            <LanguagePicker id="lang-from" label="Language of the text" value={from} onChange={setFrom} disabled={busy} />
+            <LanguagePicker id="lang-to" label="Translate into" value={to} onChange={setTo} disabled={busy} />
+          </div>
+          <Button type="submit" className="w-full" disabled={busy || incomplete}>
+            {busy ? <Loader2 className="animate-spin" /> : k === "file" ? <UploadIcon /> : k === "text" ? <FileText /> : <Link2 />}
+            {busy ? "Working…" : ADD[k].submit}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export default Dashboard;

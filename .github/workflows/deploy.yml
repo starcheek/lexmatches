@@ -1,0 +1,78 @@
+# Check on GitHub, copy the code to the server, rebuild and restart it there, verify /api/health.
+# Server setup and required secrets: deploy/README.md
+name: Deploy to server
+
+on:
+  push:
+    branches: [master]
+    # Docs, test suites and server setup notes do not change what runs: no redeploy.
+    paths-ignore:
+      - 'docs/**'
+      - 'e2e/**'
+      - 'tests/**'
+      - 'backend/tests/**'
+      - 'backend/eval/**'
+      - 'README.md'
+      - 'deploy/README.md'
+      - 'deploy/server-setup.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: Prod
+    env:
+      TARGET: ${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}
+      APP_DIR: /opt/lexmatches
+    steps:
+      - name: Check secrets
+        env:
+          DROPLET_HOST: ${{ secrets.DROPLET_HOST }}
+          DROPLET_USER: ${{ secrets.DROPLET_USER }}
+          DROPLET_SSH_KEY: ${{ secrets.DROPLET_SSH_KEY }}
+          DROPLET_KNOWN_HOSTS: ${{ secrets.DROPLET_KNOWN_HOSTS }}
+        run: |
+          missing=0
+          for s in DROPLET_HOST DROPLET_USER DROPLET_SSH_KEY DROPLET_KNOWN_HOSTS; do
+            if [ -z "${!s}" ]; then echo "::error::Secret $s is empty or not visible to environment 'Prod'"; missing=1; fi
+          done
+          exit $missing
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # A broken frontend is caught here, before the server is touched.
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build
+
+      - name: Configure SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.DROPLET_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "${{ secrets.DROPLET_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      # The server keeps its own .env (secrets, domain); everything else mirrors the repository.
+      - name: Upload code
+        run: |
+          echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) ${GITHUB_SHA::7}" > REVISION
+          rsync -az --delete \
+            --exclude=.git --exclude=.github --exclude=.env --exclude=node_modules --exclude=dist \
+            ./ "$TARGET:$APP_DIR/"
+
+      # Images are built on the server (layer cache: only what changed). Fails if /api/health stays down.
+      - name: Rebuild and restart
+        run: ssh "$TARGET" "cd $APP_DIR && sh deploy/remote-deploy.sh"

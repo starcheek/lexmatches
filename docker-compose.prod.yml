@@ -1,0 +1,33 @@
+# Production override for a single server (README "Deploy on a server"):
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# Only ports 80/443 are reachable from outside; the database, file storage and API are internal.
+services:
+  postgres:
+    ports: !reset []
+  minio:
+    ports: !reset []
+  api:
+    ports: !reset []
+  web:
+    ports: !reset []
+
+  # HTTPS with automatic certificates. Needs SITE_DOMAIN in .env and a DNS A record pointing at this server.
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:?set SITE_DOMAIN in .env, e.g. SITE_DOMAIN=read.example.com}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  caddy-data:
+  caddy-config:

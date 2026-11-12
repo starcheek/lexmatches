@@ -1,46 +1,29 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { useTheme } from "next-themes";
+import { ArrowLeft, Loader2, LogOut, Monitor, Moon, Sun } from "lucide-react";
+import { api, isLoggedIn, type User } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Loader2, CreditCard, User, LogOut } from "lucide-react";
-import { useSubscription } from "@/contexts/SubscriptionContext";
-import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 const Settings = () => {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const { theme, setTheme } = useTheme();
 
   useEffect(() => {
-    checkAuth();
-  }, []);
-
-  const checkAuth = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
+    if (!isLoggedIn()) {
       navigate("/auth");
       return;
     }
-    setUser(session.user);
-    setLoading(false);
-  };
+    api.me().then(setUser).catch(() => navigate("/auth"));
+  }, [navigate]);
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    navigate("/");
-  };
-
-
-
-
-  if (loading) {
+  if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <Loader2 className="h-12 w-12 text-accent mx-auto mb-4 animate-spin" />
-          <p className="text-muted-foreground">Loading settings...</p>
-        </div>
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-accent" aria-label="Loading settings" />
       </div>
     );
   }
@@ -48,67 +31,63 @@ const Settings = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-reading-bg to-background">
       <header className="border-b border-border/50 bg-card/50 backdrop-blur">
-        <div className="container mx-auto px-4 py-4">
+        <div className="container mx-auto px-4 py-3">
           <Button variant="ghost" onClick={() => navigate("/dashboard")}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Library
+            <ArrowLeft /> Library
           </Button>
         </div>
       </header>
 
-      <main className="container max-w-4xl mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-4xl font-serif font-bold text-primary mb-2">Settings</h1>
-          <p className="text-muted-foreground">Manage your account</p>
-        </div>
+      <main className="container mx-auto max-w-2xl px-4 py-8">
+        <h1 className="mb-6 font-serif text-3xl font-bold text-primary">Settings</h1>
 
         <div className="space-y-6">
-          {/* Account Information */}
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <User className="h-5 w-5" />
-                Account Information
-              </CardTitle>
-              <CardDescription>Your basic account details</CardDescription>
+              <CardTitle className="text-lg">Account</CardTitle>
+              <CardDescription>
+                Signed in as <span className="font-medium text-foreground">{user.email}</span> since{" "}
+                {new Date(user.created_at).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
+              </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">Email</label>
-                <p className="text-base text-foreground mt-1">{user?.email}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">User ID</label>
-                <p className="text-xs text-muted-foreground mt-1 font-mono">{user?.id}</p>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-muted-foreground">Account Created</label>
-                <p className="text-base text-foreground mt-1">
-                  {new Date(user?.created_at).toLocaleDateString('en-US', {
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  })}
-                </p>
-              </div>
+            <CardContent>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  api.signOut();
+                  navigate("/");
+                }}
+              >
+                <LogOut /> Sign out
+              </Button>
             </CardContent>
           </Card>
 
-          {/* Account Actions */}
-          <Card className="border-destructive/20">
+          <Card>
             <CardHeader>
-              <CardTitle className="text-destructive">Danger Zone</CardTitle>
-              <CardDescription>Irreversible account actions</CardDescription>
+              <CardTitle className="text-lg">Appearance</CardTitle>
+              <CardDescription>Dark mode is easier on the eyes for evening reading.</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button 
-                variant="destructive" 
-                onClick={handleSignOut}
-                className="w-full sm:w-auto"
-              >
-                <LogOut className="h-4 w-4 mr-2" />
-                Sign Out
-              </Button>
+              <div className="inline-flex rounded-lg border p-1" role="radiogroup" aria-label="Theme">
+                {[
+                  { value: "light", label: "Light", icon: <Sun /> },
+                  { value: "dark", label: "Dark", icon: <Moon /> },
+                  { value: "system", label: "System", icon: <Monitor /> },
+                ].map((t) => (
+                  <Button
+                    key={t.value}
+                    variant="ghost"
+                    size="sm"
+                    role="radio"
+                    aria-checked={theme === t.value}
+                    onClick={() => setTheme(t.value)}
+                    className={cn(theme === t.value && "bg-muted text-foreground")}
+                  >
+                    {t.icon} {t.label}
+                  </Button>
+                ))}
+              </div>
             </CardContent>
           </Card>
         </div>

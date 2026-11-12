@@ -1,16 +1,11 @@
-import { useState, useEffect } from "react";
-import { Search, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Loader2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { supabase } from "@/integrations/supabase/client";
-
-interface SearchResult {
-  pageNumber: number;
-  snippet: string;
-  matchCount: number;
-}
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tip } from "@/components/Tip";
+import { api, type SearchResult } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 interface PageSearchProps {
   bookId: string;
@@ -18,173 +13,119 @@ interface PageSearchProps {
   currentPage: number;
 }
 
+/** Search the book's text (server-side); pick a result to jump to its page. */
 const PageSearch = ({ bookId, onPageSelect, currentPage }: PageSearchProps) => {
-  const [isOpen, setIsOpen] = useState(false);
+  const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (query.trim().length < 2) {
+    const q = query.trim();
+    if (q.length < 2) {
       setResults([]);
+      setError(null);
       return;
     }
-
-    const searchTimer = setTimeout(() => {
-      performSearch();
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const found = await api.search(bookId, q);
+        if (!cancelled) {
+          setResults(found);
+          setError(null);
+        }
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Search failed");
+      } finally {
+        if (!cancelled) setSearching(false);
+      }
     }, 300);
-
-    return () => clearTimeout(searchTimer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [query, bookId]);
 
-  const performSearch = async () => {
-    if (!query.trim()) return;
-
-    setIsSearching(true);
-    try {
-      const { data: pages, error } = await supabase
-        .from("pages")
-        .select("page_number, original_text, translated_data")
-        .eq("book_id", bookId)
-        .order("page_number");
-
-      if (error) throw error;
-
-      const searchResults: SearchResult[] = [];
-      const lowerQuery = query.toLowerCase();
-
-      pages?.forEach((page) => {
-        const text = page.original_text.toLowerCase();
-        
-        // Check if query exists in text
-        if (text.includes(lowerQuery)) {
-          // Count matches
-          const matches = text.split(lowerQuery).length - 1;
-          
-          // Extract snippet around first match
-          const matchIndex = text.indexOf(lowerQuery);
-          const snippetStart = Math.max(0, matchIndex - 50);
-          const snippetEnd = Math.min(text.length, matchIndex + query.length + 50);
-          
-          let snippet = page.original_text.substring(snippetStart, snippetEnd);
-          if (snippetStart > 0) snippet = "..." + snippet;
-          if (snippetEnd < text.length) snippet = snippet + "...";
-
-          searchResults.push({
-            pageNumber: page.page_number,
-            snippet,
-            matchCount: matches,
-          });
-        }
-      });
-
-      setResults(searchResults);
-    } catch (error) {
-      console.error("Search error:", error);
-    } finally {
-      setIsSearching(false);
-    }
-  };
-
-  const handleResultClick = (pageNumber: number) => {
+  const pick = (pageNumber: number) => {
     onPageSelect(pageNumber);
-    setIsOpen(false);
+    setOpen(false);
     setQuery("");
   };
 
-  const highlightQuery = (text: string) => {
-    if (!query.trim()) return text;
-    
-    const parts = text.split(new RegExp(`(${query})`, 'gi'));
-    return parts.map((part, i) => 
-      part.toLowerCase() === query.toLowerCase() 
-        ? <mark key={i} className="bg-accent text-accent-foreground font-semibold">{part}</mark>
-        : part
+  const highlight = (text: string) => {
+    const q = query.trim();
+    if (!q) return text;
+    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return text.split(new RegExp(`(${escaped})`, "gi")).map((part, i) =>
+      part.toLowerCase() === q.toLowerCase() ? (
+        <mark key={i} className="rounded-sm bg-accent/20 px-0.5 text-foreground">
+          {part}
+        </mark>
+      ) : (
+        part
+      ),
     );
   };
 
   return (
-    <div className="relative">
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => setIsOpen(!isOpen)}
-        className="gap-2"
-      >
-        <Search className="h-4 w-4" />
-        Search Pages
-      </Button>
-
-      {isOpen && (
-        <Card className="absolute top-12 right-0 w-96 p-4 shadow-lg z-50 border-border">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="text"
-                placeholder="Search in book..."
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                className="pl-9"
-                autoFocus
-              />
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setIsOpen(false);
-                setQuery("");
-              }}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </div>
-
-          {isSearching ? (
-            <div className="text-center py-8 text-muted-foreground text-sm">
-              Searching...
-            </div>
+    <Popover open={open} onOpenChange={setOpen}>
+      <Tip label="Search in book">
+        <PopoverTrigger asChild>
+          <Button variant="ghost" size="icon" className="shrink-0" aria-label="Search in book">
+            <Search />
+          </Button>
+        </PopoverTrigger>
+      </Tip>
+      <PopoverContent align="end" className="w-[min(24rem,calc(100vw-1rem))] p-3">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="search"
+            placeholder="Search in this book…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+            aria-label="Search text"
+            autoFocus
+          />
+          {searching && <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />}
+        </div>
+        <div className="mt-3 max-h-[min(24rem,60vh)] overflow-y-auto" role="list" aria-label="Search results">
+          {error ? (
+            <p className="py-6 text-center text-sm text-destructive">{error}</p>
           ) : results.length > 0 ? (
-            <ScrollArea className="h-[400px] pr-4">
-              <div className="space-y-2">
-                {results.map((result) => (
-                  <button
-                    key={result.pageNumber}
-                    onClick={() => handleResultClick(result.pageNumber)}
-                    className={`w-full text-left p-3 rounded-lg border transition-colors hover:bg-accent/50 ${
-                      result.pageNumber === currentPage
-                        ? "bg-accent border-accent-foreground/20"
-                        : "border-border bg-card"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-semibold text-primary">
-                        Page {result.pageNumber}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {result.matchCount} match{result.matchCount !== 1 ? "es" : ""}
-                      </span>
-                    </div>
-                    <p className="text-sm text-foreground/80 line-clamp-2">
-                      {highlightQuery(result.snippet)}
-                    </p>
-                  </button>
-                ))}
-              </div>
-            </ScrollArea>
-          ) : query.trim().length >= 2 ? (
-            <div className="text-center py-8 text-muted-foreground text-sm">
-              No results found for "{query}"
+            <div className="space-y-1.5">
+              {results.map((r) => (
+                <button
+                  key={r.pageNumber}
+                  role="listitem"
+                  onClick={() => pick(r.pageNumber)}
+                  className={cn(
+                    "w-full rounded-md border p-2.5 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    r.pageNumber === currentPage ? "border-accent/40 bg-accent/5" : "border-border",
+                  )}
+                >
+                  <div className="mb-1 flex items-center justify-between text-xs">
+                    <span className="font-semibold text-primary">Page {r.pageNumber}</span>
+                    <span className="text-muted-foreground">
+                      {r.matchCount} match{r.matchCount !== 1 ? "es" : ""}
+                    </span>
+                  </div>
+                  <p className="line-clamp-2 font-serif text-sm text-foreground/80">{highlight(r.snippet)}</p>
+                </button>
+              ))}
             </div>
           ) : (
-            <div className="text-center py-8 text-muted-foreground text-sm">
-              Enter at least 2 characters to search
-            </div>
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              {query.trim().length >= 2 ? (searching ? "Searching…" : `No matches for “${query.trim()}”`) : "Type at least 2 letters"}
+            </p>
           )}
-        </Card>
-      )}
-    </div>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 };
 

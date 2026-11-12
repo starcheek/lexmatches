@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { api, isLoggedIn } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,21 +27,8 @@ const Auth = () => {
   const [password, setPassword] = useState("");
 
   useEffect(() => {
-    // Check if user is already logged in
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        navigate("/dashboard");
-      }
-    });
-
-    // Listen for auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session) {
-        navigate("/dashboard");
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    // Already logged in
+    if (isLoggedIn()) navigate("/dashboard");
   }, [navigate]);
 
   const handleSignUp = async (e: React.FormEvent) => {
@@ -57,18 +44,12 @@ const Auth = () => {
       return;
     }
 
-    const { error } = await supabase.auth.signUp({
-      email: validation.data.email,
-      password: validation.data.password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/dashboard`,
-      },
-    });
-
-    if (error) {
-      toast.error(error.message);
-    } else {
-      toast.success("Account created! Please check your email to verify.");
+    try {
+      await api.signUp(validation.data.email, validation.data.password);
+      toast.success("Account created!");
+      navigate("/dashboard");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Sign up failed");
     }
     setLoading(false);
   };
@@ -86,15 +67,12 @@ const Auth = () => {
       return;
     }
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email: validation.data.email,
-      password: validation.data.password,
-    });
-
-    if (error) {
-      toast.error(error.message);
-    } else {
+    try {
+      await api.signIn(validation.data.email, validation.data.password);
       toast.success("Welcome back!");
+      navigate("/dashboard");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Sign in failed");
     }
     setLoading(false);
   };

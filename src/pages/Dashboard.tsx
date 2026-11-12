@@ -229,7 +229,7 @@ function BookCard({ book, onOpen, onDelete }: { book: Book; onOpen: () => void; 
         <div
           aria-hidden
           data-testid="book-preview"
-          className="relative -mx-5 -mt-5 mb-4 h-40 overflow-hidden border-b bg-reading-bg px-6 pt-5 font-serif text-[0.8rem] leading-relaxed text-foreground/75 transition-colors group-hover:text-foreground/90"
+          className="relative -mx-5 -mt-5 mb-4 min-h-40 flex-1 basis-40 overflow-hidden border-b bg-reading-bg px-6 pt-5 font-serif text-[0.8rem] leading-relaxed text-foreground/75 transition-colors group-hover:text-foreground/90"
         >
           <p className="whitespace-pre-line">{book.preview.replace(/\n{2,}/g, "\n")}</p>
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-reading-bg to-transparent" />
@@ -250,7 +250,7 @@ function BookCard({ book, onOpen, onDelete }: { book: Book; onOpen: () => void; 
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> {book.error}
         </p>
       )}
-      <div className="mt-auto flex items-center justify-between pt-5 text-sm">
+      <div className={cn("flex items-center justify-between text-sm", book.preview ? "pt-3" : "mt-auto pt-5")}>
         <span className="text-muted-foreground">
           {book.total_pages > 0
             ? `${book.total_pages} page${book.total_pages === 1 ? "" : "s"}${book.last_read_page > 1 ? ` · at page ${book.last_read_page}` : ""}`

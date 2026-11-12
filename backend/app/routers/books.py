@@ -29,7 +29,7 @@ def _rejected(e: IngestError) -> JSONResponse:
 def list_books(user: dict = Depends(auth.current_user)):
     # preview: the beginning of the first page, shown on the library card
     rows = db.fetch_all(
-        f"SELECT {BOOK_FIELDS}, (SELECT left(p.original_text, 600) FROM pages p"
+        f"SELECT {BOOK_FIELDS}, (SELECT left(p.original_text, 1200) FROM pages p"
         f" WHERE p.book_id = books.id AND p.page_number = 1) AS preview"
         f" FROM books WHERE user_id = %s ORDER BY created_at DESC", (user["id"],)
     )

@@ -6,7 +6,7 @@ import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
-from app import auth, db, storage
+from app import auth, db, seed, storage
 from app.config import settings
 from app.routers.analytics import admin
 from app.routers.auth import Credentials
@@ -69,6 +69,7 @@ def create_user(body: NewUser):
         )
     except psycopg.errors.UniqueViolation:
         raise HTTPException(409, "User already registered")
+    seed.add_sample_books(user["id"])
     return {"id": str(user["id"]), "email": user["email"], "password": password}
 
 

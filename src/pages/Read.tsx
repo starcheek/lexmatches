@@ -402,7 +402,7 @@ const Read = () => {
             <li><span className="font-medium">Click a word or phrase</span> to see its translation under it.</li>
             <li><span className="font-medium">↑ and ↓</span> move line by line; a golden dot marks your line.</li>
             <li><span className="font-medium">Line</span> shows the translations of your current line only, and follows you as you move.</li>
-            <li><span className="font-medium">← or →</span> shows the translations of the whole page.</li>
+            <li><span className="font-medium">← or →</span> shows the translations of the whole page; in Line, it hides or shows those of your line.</li>
             <li><span className="font-medium">Play</span> reads the text aloud and highlights each word.</li>
           </ul>
           <h3 className="text-sm font-semibold">Keyboard shortcuts</h3>
@@ -410,7 +410,8 @@ const Read = () => {
             {[
               ["↑ / ↓", "Previous / next line"],
               ["L", "Translations of the current line only, on / off"],
-              ["← / → / G", "All glosses of the page on / off"],
+              ["← / →", "All glosses of the page on / off; in Line: the current line's"],
+              ["G", "All glosses of the page on / off"],
               ["T", "Sentence translations on / off"],
               ["− / +", "Smaller / larger text"],
               ["Enter", "Translation of the current line's sentence"],

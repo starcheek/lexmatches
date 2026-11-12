@@ -220,10 +220,21 @@ function BookCard({ book, onOpen, onDelete }: { book: Book; onOpen: () => void; 
   const failed = book.status === "failed";
   return (
     <div
-      className="group relative flex flex-col rounded-lg border bg-card p-5 shadow-sm transition-shadow hover:shadow-soft"
+      className="group relative flex flex-col overflow-hidden rounded-lg border bg-card p-5 shadow-sm transition-shadow hover:shadow-soft"
       data-testid="book-card"
       data-status={book.status}
     >
+      {book.preview && (
+        // The beginning of the book as a small page; the whole card opens the reader.
+        <div
+          aria-hidden
+          data-testid="book-preview"
+          className="relative -mx-5 -mt-5 mb-4 h-40 overflow-hidden border-b bg-reading-bg px-6 pt-5 font-serif text-[0.8rem] leading-relaxed text-foreground/75 transition-colors group-hover:text-foreground/90"
+        >
+          <p className="whitespace-pre-line">{book.preview.replace(/\n{2,}/g, "\n")}</p>
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-reading-bg to-transparent" />
+        </div>
+      )}
       <button
         type="button"
         onClick={onOpen}

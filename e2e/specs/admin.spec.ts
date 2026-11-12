@@ -45,7 +45,23 @@ test("admin: create a test account, sign in with it, close sign-up, delete the a
   await tab.locator("#signin-password").fill(password);
   await tab.getByRole("button", { name: "Sign In" }).click();
   await tab.waitForURL("**/dashboard");
+  // the account starts with the sample book; its card shows the beginning of the text
+  await expect(tab.getByTestId("book-card")).toHaveCount(1);
+  await expect(tab.getByTestId("book-preview")).toContainText("Les Étoiles", { timeout: 30_000 });
+  await tab.screenshot({ path: "screenshots/31-library-sample.png", fullPage: true });
   await visitor.close();
+
+  // the login link signs in without the form and opens the sample book in the reader
+  const guest = await browser.newContext();
+  const direct = await guest.newPage();
+  await direct.goto(`/auth#login=${encodeURIComponent(email)}:${encodeURIComponent(password)}`);
+  await direct.waitForURL("**/read/**");
+  expect(direct.url()).not.toContain(password);
+  await expect(direct.getByTestId("reader-help")).toBeVisible();
+  await direct.getByRole("button", { name: "Got it" }).click();
+  await expect(direct.locator("[data-sentence]").first()).toContainText("Les Étoiles");
+  await direct.screenshot({ path: "screenshots/32-direct-link-reader.png", fullPage: false });
+  await guest.close();
 
   // restore the switch, remove the account
   if (wasOpen === "Close sign-up") {

@@ -48,6 +48,9 @@ class Settings:
     # Bearer token for /api/admin/analytics/* (those endpoints answer 404 while it is empty)
     admin_token: str = field(default_factory=lambda: _env("ADMIN_TOKEN"))
 
+    # New accounts start with the sample books in backend/seed (app/seed.py); "0" turns that off.
+    seed_books: bool = field(default_factory=lambda: _env("SEED_BOOKS", "1") != "0")
+
     max_upload_mb: int = field(default_factory=lambda: int(_env("MAX_UPLOAD_MB", "100")))
     job_workers: int = field(default_factory=lambda: int(_env("JOB_WORKERS", "4")))  # page translations at once
     book_workers: int = field(default_factory=lambda: int(_env("BOOK_WORKERS", "1")))  # uploaded books split at once

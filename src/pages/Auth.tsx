@@ -27,6 +27,25 @@ const Auth = () => {
   const [password, setPassword] = useState("");
 
   useEffect(() => {
+    // A login link from the owner (/admin, "/auth#login=<email>:<password>"): sign in without the form and
+    // open the reader straight away when there is one book to read. The fragment never reaches the server.
+    const link = window.location.hash.match(/^#login=([^:]+):(.+)$/);
+    if (link) {
+      window.history.replaceState(null, "", window.location.pathname);
+      setLoading(true);
+      api
+        .signIn(decodeURIComponent(link[1]), decodeURIComponent(link[2]))
+        .then(() => api.listBooks())
+        .then((books) => {
+          const ready = books.filter((b) => b.status === "completed");
+          navigate(ready.length === 1 ? `/read/${ready[0].id}` : "/dashboard");
+        })
+        .catch((error) => {
+          toast.error(error instanceof Error ? error.message : "Sign in failed");
+          setLoading(false);
+        });
+      return;
+    }
     // Already logged in
     if (isLoggedIn()) navigate("/dashboard");
   }, [navigate]);

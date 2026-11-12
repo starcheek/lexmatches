@@ -47,7 +47,12 @@ run the script again and send testers the new one. It only works while this PC a
 **Admin page** (`/admin#<ADMIN_TOKEN>`, link printed by the script):
 
 - create a test account (password generated, "Copy login details" gives the text to send), reset a
-  password, delete an account with all its data
+  password, delete an account with all its data. The copied text starts with a link
+  (`/auth#login=<email>:<password>`) that signs in by itself and opens the sample book in the reader.
+  Anyone who has the link has the account, so use it for throwaway test accounts only
+- every new account starts with the sample books in `backend/seed/` (`app/seed.py`; public-domain text
+  only, each account gets its own copy; `SEED_BOOKS=0` turns it off). The library shows the beginning of
+  each book on its card
 - open / close public sign-up — keep it closed while the address is shared; every translated page is
   billed to your Anthropic key
 - per account: books, translated pages, sessions, last seen, last IP

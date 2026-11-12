@@ -4,7 +4,7 @@ import psycopg
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
-from app import auth, db
+from app import auth, db, seed
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -43,6 +43,7 @@ def signup(body: Credentials):
         )
     except psycopg.errors.UniqueViolation:
         raise HTTPException(409, "User already registered")
+    seed.add_sample_books(user["id"])
     return {"token": auth.create_token(user["id"]), "user": _user_out(user)}
 
 

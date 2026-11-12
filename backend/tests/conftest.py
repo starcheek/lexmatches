@@ -25,6 +25,7 @@ os.environ["STRIPE_SECRET_KEY"] = ""
 os.environ["ELEVENLABS_API_KEY"] = ""
 os.environ["ADMIN_TOKEN"] = "test-admin-token"
 os.environ["PIPER_PRELOAD"] = "none"  # no background voice downloads during tests
+os.environ["SEED_BOOKS"] = "0"  # accounts start empty; tests/test_seed.py turns the sample books on
 
 from fastapi.testclient import TestClient  # noqa: E402
 

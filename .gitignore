@@ -63,6 +63,3 @@ Thumbs.db
 
 # Generated translation-comparison output
 backend/eval/results/
-
-backend/eval/metrics/
-backend/eval/cache/

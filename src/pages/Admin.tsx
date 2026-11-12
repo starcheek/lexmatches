@@ -128,7 +128,11 @@ const Admin = () => {
   };
 
   const copy = (i: Issued) => {
-    const text = `LexMatches test account\n${window.location.origin}/auth\nEmail: ${i.email}\nPassword: ${i.password}`;
+    const auth = `${window.location.origin}/auth`;
+    // The first link signs in by itself and opens the sample book (see Auth.tsx).
+    const text =
+      `LexMatches test account\nOpen directly: ${auth}#login=${encodeURIComponent(i.email)}:${encodeURIComponent(i.password)}\n` +
+      `Or sign in at ${auth}\nEmail: ${i.email}\nPassword: ${i.password}`;
     navigator.clipboard.writeText(text).then(
       () => toast.success("Login details copied"),
       () => toast.error("Could not copy; select the text instead"),

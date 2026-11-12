@@ -22,6 +22,8 @@ export interface Book {
   error: string | null;
   total_pages: number;
   last_read_page: number;
+  /** The beginning of the first page (library list only). */
+  preview?: string | null;
   created_at: string;
   updated_at: string;
 }

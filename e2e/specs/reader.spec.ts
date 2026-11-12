@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { removeSampleBooks } from "./sample";
 
 // Runs against whatever translator the api has (Claude when ANTHROPIC_API_KEY is set, else the mock).
 // Assertions only rely on the v2 data contract, not on specific translations.
@@ -26,6 +27,7 @@ async function signUp(page: Page, tag: string) {
   await page.getByRole("button", { name: "Create Account" }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
   await expect(page.getByRole("heading", { name: "Your Library" })).toBeVisible();
+  await removeSampleBooks(page);
 }
 
 /** No horizontal page scroll and no text box wider than the reading column. */

@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { removeSampleBooks } from "./sample";
 
 // Gloss layout on real model output (fixtures/gloss_verne.json: an eval run on public-domain Verne),
 // served by patching the pages response, so it costs nothing and does not depend on the translator.
@@ -54,6 +55,7 @@ test("glosses sit under exactly their chunk, without holes in the source line", 
   await page.locator("#signup-password").fill("e2e-password-123");
   await page.getByRole("button", { name: "Create Account" }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
+  await removeSampleBooks(page);
   await page.getByRole("button", { name: /Paste Text/ }).click();
   const dialog = page.getByRole("dialog");
   await dialog.locator("#text-title").fill("Le Tour du monde (gloss e2e)");
@@ -210,6 +212,19 @@ test("glosses sit under exactly their chunk, without holes in the source line", 
   expect(lined.glossRows).toEqual([lineRow + 2]); // the glosses moved with the line
   expect(absolute(lined)).toEqual(absolute(plain));
   expect(await lookups()).toBe(lookupsBefore + 1); // following the text is not counted again
+  // ← / → hide the line's glosses (and they stay hidden while moving) and show them again.
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowDown");
+  await page.waitForTimeout(400);
+  lined = await layout();
+  expect(lined.lineRows).toEqual([lineRow + 3]);
+  expect(lined.glosses).toBe(0);
+  await page.keyboard.press("ArrowRight");
+  await page.waitForTimeout(400);
+  lined = await layout();
+  expect(lined.glossRows).toEqual([lineRow + 3]);
+  expect(absolute(lined)).toEqual(absolute(plain));
+  expect(await lookups()).toBe(lookupsBefore + 2); // asking again is a lookup
   await page.keyboard.press("l");
   expect((await layout()).glosses).toBe(0);
   await page.keyboard.press("g"); // all glosses back on for the text-size check

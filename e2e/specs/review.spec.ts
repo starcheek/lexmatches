@@ -3,6 +3,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { removeSampleBooks } from "./sample";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dir = path.resolve(here, "../screenshots/review");
@@ -22,6 +23,9 @@ const tour = async (page: Page, tag: string) => {
   await page.locator("#signup-password").fill("review-password-123");
   await page.getByRole("button", { name: "Create Account" }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page.getByTestId("book-card")).toHaveCount(1);
+  await shot("03-dashboard-sample");
+  await removeSampleBooks(page);
   await shot("03-dashboard-empty");
   await page.getByRole("button", { name: /Paste Text/ }).click();
   const dialog = page.getByRole("dialog");

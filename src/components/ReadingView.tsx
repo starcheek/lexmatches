@@ -178,8 +178,15 @@ const ReadingView = ({
   // Line mode: the tokens of the current line; their glosses are shown, nothing else is.
   const lineOn = prefs.line && model.hasGlosses && !glossesOn;
   const [lineKeys, setLineKeys] = useState<Set<string>>(new Set());
+  // ← / → in line mode: the line's glosses off (read unaided, keep moving) and on again when needed.
+  const [lineHelp, setLineHelp] = useState(true);
+  const toggleLineHelp = useCallback(() => {
+    if (!lineHelp) countHelp();
+    setLineHelp(!lineHelp);
+  }, [lineHelp, countHelp]);
   const toggleLine = useCallback(() => {
     updatePrefs({ line: !prefs.line });
+    setLineHelp(true);
     if (prefs.line) return;
     countHelp(); // turning the help on is one lookup; following the text line by line is not counted again
     if (!cursor) {
@@ -203,9 +210,9 @@ const ReadingView = ({
     const words = (cur.querySelector(".chunk-src") ?? cur).getBoundingClientRect(); // the source words, not the gloss
     setDotTop(words.top + words.height / 2 - article.getBoundingClientRect().top);
     // A line is a row of tokens as laid out; showing a gloss never moves a word, so the row is stable.
-    const keys = lineOn ? lineOf(tokens(), cur).map((t) => t.dataset.tok!) : [];
+    const keys = lineOn && lineHelp ? lineOf(tokens(), cur).map((t) => t.dataset.tok!) : [];
     setLineKeys((prev) => (prev.size === keys.length && keys.every((k) => prev.has(k)) ? prev : new Set(keys)));
-  }, [cursor, model, sizeIndex, translationsOn, viewport, tokens, lineOn]);
+  }, [cursor, model, sizeIndex, translationsOn, viewport, tokens, lineOn, lineHelp]);
   const resize = useCallback(
     (step: number) => {
       const next = Math.min(TEXT_SCALES.length - 1, Math.max(0, sizeIndex + step));
@@ -333,7 +340,7 @@ const ReadingView = ({
       const key = e.key.toLowerCase();
       if (e.key === "ArrowDown") moveLine(1);
       else if (e.key === "ArrowUp") moveLine(-1);
-      else if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && model.hasGlosses) toggleGlosses();
+      else if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && model.hasGlosses) (lineOn ? toggleLineHelp : toggleGlosses)();
       else if (e.key === "Enter" && cursor) {
         // the natural translation of the sentence the current line starts in
         const sentence = model.sentences[parseInt(cursor, 10)];
@@ -350,7 +357,7 @@ const ReadingView = ({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- activateSentence only uses state setters
-  }, [demo, model, cursor, toggleGlosses, toggleLine, toggleTranslations, resize, moveLine]);
+  }, [demo, model, cursor, lineOn, toggleGlosses, toggleLine, toggleLineHelp, toggleTranslations, resize, moveLine]);
 
   // ---- Bookmark: remember the top visible sentence of this book; restore it once ----
   const bookmarkKey = `lexmatches:bookmark:${bookId}`;
@@ -420,7 +427,7 @@ const ReadingView = ({
         <HelpToggle pressed={glossesOn} onClick={toggleGlosses} label="Glosses" tip={demo ? "Show all glosses" : "Show all glosses (G)"} icon={<WholeWord />} />
       )}
       {model.hasGlosses && !demo && (
-        <HelpToggle pressed={lineOn} onClick={toggleLine} label="Line" tip="Glosses for the line you are on only; move with ↑ ↓ (L)" icon={<Rows3 />} />
+        <HelpToggle pressed={lineOn} onClick={toggleLine} label="Line" tip="Glosses for the line you are on only; move with ↑ ↓, hide or show with ← → (L)" icon={<Rows3 />} />
       )}
       {model.hasTranslations && (
         <HelpToggle pressed={translationsOn}onClick={toggleTranslations} label="Translation" tip={demo ? "Sentence translations" : "Sentence translations (T)"} icon={<Languages />} />

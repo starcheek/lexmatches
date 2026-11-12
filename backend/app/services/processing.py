@@ -49,6 +49,22 @@ def store_document(book_id, doc: Document, conn=None) -> int:
     return len(units)
 
 
+def create_uploaded_book(user_id, title: str, original_locale: str, target_locale: str, data: bytes, fmt: str) -> dict:
+    """Store an uploaded (or sample) file as a `pending` book and split it into pages in the background."""
+    from app import jobs
+    from app.routers.common import BOOK_FIELDS
+
+    book = db.fetch_one(
+        f"INSERT INTO books (user_id, title, original_locale, target_locale, source, source_format, status)"
+        f" VALUES (%s, %s, %s, %s, %s, %s, 'pending') RETURNING {BOOK_FIELDS}",
+        (user_id, title.strip(), original_locale, target_locale, "pdf" if fmt == "pdf" else "text", fmt),
+    )
+    storage.put(storage.book_file_key(user_id, book["id"], fmt), data,
+                "application/pdf" if fmt == "pdf" else "application/octet-stream")
+    jobs.submit(f"book:{book['id']}", process_book, str(book["id"]))
+    return book
+
+
 def process_book(book_id: str) -> None:
     book = db.fetch_one("SELECT * FROM books WHERE id = %s", (book_id,))
     if book is None:

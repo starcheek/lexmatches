@@ -11,6 +11,7 @@ RUN pip install -r requirements.txt
 
 COPY pytest.ini .
 COPY app ./app
+COPY seed ./seed
 COPY tests ./tests
 
 RUN mkdir -p /data/piper

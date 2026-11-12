@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
-from app import auth, db, jobs, storage, tts
+from app import auth, db, storage, tts
 from app.config import settings
 from app.ingest import MAX_TEXT_CHARS, Document, IngestError, apply_overrides, build_units, ingest_file, ingest_text
 from app.ingest.fetch import fetch
@@ -14,7 +14,7 @@ from app.ingest.pipeline import precheck
 from app.languages import to_iso
 from app.routers.common import BOOK_FIELDS, PAGE_FIELDS, book_out, owned_book, page_out
 from app.services.export import render_export
-from app.services.processing import process_book, store_document
+from app.services.processing import create_uploaded_book, store_document
 
 router = APIRouter(prefix="/api/books", tags=["books"])
 _IMPORTED = ("paste", "paste_html", "url")  # source formats without a stored original file
@@ -27,8 +27,11 @@ def _rejected(e: IngestError) -> JSONResponse:
 
 @router.get("")
 def list_books(user: dict = Depends(auth.current_user)):
+    # preview: the beginning of the first page, shown on the library card
     rows = db.fetch_all(
-        f"SELECT {BOOK_FIELDS} FROM books WHERE user_id = %s ORDER BY created_at DESC", (user["id"],)
+        f"SELECT {BOOK_FIELDS}, (SELECT left(p.original_text, 600) FROM pages p"
+        f" WHERE p.book_id = books.id AND p.page_number = 1) AS preview"
+        f" FROM books WHERE user_id = %s ORDER BY created_at DESC", (user["id"],)
     )
     return [book_out(r) for r in rows]
 
@@ -50,15 +53,7 @@ def upload_book(
         fmt = precheck(data)
     except IngestError as e:
         return _rejected(e)
-    book = db.fetch_one(
-        f"INSERT INTO books (user_id, title, original_locale, target_locale, source, source_format, status)"
-        f" VALUES (%s, %s, %s, %s, %s, %s, 'pending') RETURNING {BOOK_FIELDS}",
-        (user["id"], title.strip(), original_locale, target_locale, "pdf" if fmt == "pdf" else "text", fmt),
-    )
-    storage.put(storage.book_file_key(user["id"], book["id"], fmt), data,
-                "application/pdf" if fmt == "pdf" else "application/octet-stream")
-    jobs.submit(f"book:{book['id']}", process_book, str(book["id"]))
-    return book_out(book)
+    return book_out(create_uploaded_book(user["id"], title, original_locale, target_locale, data, fmt))
 
 
 def _create_imported(user: dict, title: str, original_locale: str, target_locale: str, doc: Document) -> dict:

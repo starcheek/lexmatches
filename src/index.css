@@ -286,6 +286,71 @@ All colors MUST be HSL.
     background: hsl(var(--muted));
     animation: lm-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
+  /* Guided tour: the marker is bigger while it is being shown, and the keys of the arrow cluster. */
+  .line-dot[data-tour] {
+    left: -1.05em;
+    width: 0.56em;
+    height: 0.56em;
+    margin-top: -0.28em;
+    box-shadow: 0 0 0 0.22em hsl(43 90% 52% / 0.3);
+    animation: tour-dot 1.4s ease-in-out infinite;
+  }
+  @keyframes tour-dot {
+    50% { box-shadow: 0 0 0 0.42em hsl(43 90% 52% / 0.12); }
+  }
+  .tour-key {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 3.25rem;
+    height: 3.25rem;
+    border: 1px solid hsl(var(--border));
+    border-bottom-width: 5px;
+    border-radius: 0.6rem;
+    background: hsl(var(--muted));
+    font-family: Inter, system-ui, sans-serif;
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: hsl(var(--muted-foreground) / 0.45);
+    transition: transform 110ms ease, background-color 110ms ease, color 110ms ease;
+  }
+  .tour-key[data-active] {
+    border-color: hsl(var(--accent));
+    background: hsl(var(--background));
+    color: hsl(var(--accent));
+    animation: tour-key-glow 1.3s ease-in-out infinite;
+    cursor: pointer;
+  }
+  .tour-key[data-active]:active { transform: translateY(4px) scale(0.96); }
+  .tour-key[data-pressed] {
+    transform: translateY(4px) scale(0.96);
+    border-color: hsl(var(--accent));
+    border-bottom-color: hsl(var(--accent));
+    background: hsl(var(--accent));
+    color: hsl(var(--accent-foreground));
+    animation: none;
+  }
+  .tour-key[data-pressed]::after {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border-radius: inherit;
+    border: 2px solid hsl(var(--accent));
+    animation: tour-key-ripple 450ms ease-out forwards;
+  }
+  @keyframes tour-key-glow {
+    0%, 100% { box-shadow: 0 0 0 0 hsl(var(--accent) / 0.45); }
+    50% { box-shadow: 0 0 0 7px hsl(var(--accent) / 0); }
+  }
+  @keyframes tour-key-ripple {
+    to { transform: scale(1.7); opacity: 0; }
+  }
+  .tour-ring { animation: lm-pulse 1s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    .line-dot[data-tour], .tour-key[data-active], .tour-ring { animation: none; }
+  }
+
   @keyframes lm-pulse {
     50% { opacity: 0.5; }
   }

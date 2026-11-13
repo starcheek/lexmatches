@@ -13,6 +13,7 @@
 // Pages are turned with the buttons. While read-aloud is active, tapping a sentence jumps playback there.
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { AArrowDown, AArrowUp, ChevronLeft, ChevronRight, Languages, Play, Rows3, WholeWord } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tip } from "@/components/Tip";
 import { api, isLoggedIn, type TranslationData } from "@/lib/api";
@@ -63,7 +64,33 @@ interface ReadingViewProps {
   banner?: ReactNode;
   /** Landing-page demo: controls inline instead of docked, no shortcuts, nothing recorded. */
   demo?: boolean;
+  /** Bumped by the page to start the guided tour ("Show me how to use it"). */
+  tourRequest?: number;
 }
+
+/** The guided tour: the page is dimmed except for what is being shown and the reader is asked to
+ *  press one key at a time; only that key works (Esc or "Skip" ends it). */
+interface TourState {
+  /** 0 marker on, 1 marker down, 2 translations with the arrows, 3 the other translation type, 4 done */
+  step: 0 | 1 | 2 | 3 | 4;
+  pressed?: "down" | "left" | "right";
+  /** Step 1: presses of arrow down still asked for. */
+  left?: number;
+  /** Second half of a step (2: hiding again; 3: the other type is on). */
+  after?: boolean;
+  /** Step 2: what the arrows show for this reader. */
+  mode?: "line" | "page";
+  /** Step 3: the dock toggle being demonstrated. */
+  target?: "glosses" | "line";
+}
+interface Box { x: number; y: number; w: number; h: number }
+/** What the tour leaves undimmed (viewport coordinates): the text being shown and a dock toggle. */
+interface TourSpot { text: Box | null; target: Box | null }
+/** What the reader can do during the tour: an arrow key, or a click on the highlighted dock toggle. */
+type TourInput = "down" | "left" | "right" | "target";
+const TOUR_CARD_H = 230; // room kept for the tour card
+const sameBox = (a: Box | null, b: Box | null) =>
+  a === b || (!!a && !!b && Math.abs(a.x - b.x) < 1 && Math.abs(a.y - b.y) < 1 && Math.abs(a.w - b.w) < 1 && Math.abs(a.h - b.h) < 1);
 
 const ReadingView = ({
   pageNumber,
@@ -76,6 +103,7 @@ const ReadingView = ({
   onPrevPage,
   banner,
   demo = false,
+  tourRequest = 0,
 }: ReadingViewProps) => {
   const model = useMemo(() => buildReaderModel(originalText, translationData), [originalText, translationData]);
   const cjk = useMemo(() => CJK.test(originalText.slice(0, 400)), [originalText]);
@@ -96,7 +124,10 @@ const ReadingView = ({
       return next;
     });
   }, []);
-  const countHelp = useCallback(() => setClickCount((c) => c + 1), []);
+  const touring = useRef(false); // the guided tour is running: what it shows is not a lookup
+  const countHelp = useCallback(() => {
+    if (!touring.current) setClickCount((c) => c + 1);
+  }, []);
 
   // A display change (glosses, translations, text size) changes line heights: keep the line the
   // reader is looking at (the first words below the header) where it is instead of letting the text jump.
@@ -223,6 +254,152 @@ const ReadingView = ({
     [sizeIndex, updatePrefs, holdPosition],
   );
 
+  // ---- Guided tour ("Show me how to use it"): the page is dimmed except for the line being shown, a
+  // large card next to it asks for a key and waits; the reader presses it (or clicks it in the card)
+  // and the page reacts as it always does. Nothing else works meanwhile. Nothing is counted as a
+  // lookup and the reader's display preferences are put back when it ends.
+  const [tour, setTour] = useState<TourState | null>(null);
+  const [spot, setSpot] = useState<TourSpot>({ text: null, target: null });
+  const tourRun = useRef(0);
+  const tourWaiter = useRef<((input: TourInput) => void) | null>(null); // the step waiting for the reader
+  const tourInput = useCallback((input: TourInput) => tourWaiter.current?.(input), []);
+  const tourSaved = useRef<Pick<Prefs, "glosses" | "line"> | null>(null);
+  // The tour runs across many renders: it always acts through the latest callbacks and state.
+  const live = useRef({ moveLine, currentToken, glossesOn, prefs, hasGlosses: model.hasGlosses });
+  live.current = { moveLine, currentToken, glossesOn, prefs, hasGlosses: model.hasGlosses };
+  const stopTour = useCallback(() => {
+    if (!touring.current) return;
+    tourRun.current++;
+    tourWaiter.current = null;
+    touring.current = false;
+    setTour(null);
+    if (tourSaved.current) {
+      holdPosition();
+      updatePrefs(tourSaved.current);
+    }
+    setLineHelp(true);
+  }, [updatePrefs, holdPosition]);
+  const startTour = useCallback(async () => {
+    if (touring.current) return;
+    if (!live.current.hasGlosses) return void toast.info("Translate this page first, then I can show you how it works.");
+    const run = ++tourRun.current;
+    touring.current = true;
+    const saved = { glosses: live.current.prefs.glosses, line: live.current.prefs.line };
+    tourSaved.current = saved;
+    // What the arrows show for this reader: the current line's translations, or the whole page's.
+    const mode: "line" | "page" = !live.current.glossesOn && saved.line ? "line" : "page";
+    const other = mode === "line" ? "page" : "line";
+    const show = (m: "line" | "page", on: boolean) => {
+      holdPosition();
+      updatePrefs({ glosses: m === "page" && on, line: m === "line" });
+      setLineHelp(on);
+    };
+    const wait = (ms: number) =>
+      new Promise<void>((resolve, reject) => setTimeout(() => (tourRun.current === run ? resolve() : reject(new Error("tour stopped"))), ms));
+    /** Waits (as long as it takes) until the reader gives one of the inputs the step asks for. */
+    const input = (...accept: TourInput[]) =>
+      new Promise<TourInput>((resolve) => {
+        tourWaiter.current = (given) => {
+          if (tourRun.current !== run || !accept.includes(given)) return;
+          tourWaiter.current = null;
+          resolve(given);
+        };
+      });
+    /** The reader's key is shown going down, the page answers, and there is time to see what changed. */
+    const press = async (state: TourState, key: TourInput, act: () => void, pause: number) => {
+      if (key !== "target") setTour({ ...state, pressed: key });
+      act();
+      await wait(350);
+      setTour(state);
+      await wait(pause);
+    };
+    try {
+      // Start from the plain text, without a marker, so that every key press visibly does something.
+      setCursor(null);
+      show(mode, false);
+      // 1. arrow down puts the marker on the line the reader is at ...
+      setTour({ step: 0 });
+      await press({ step: 0 }, await input("down"), () => live.current.moveLine(1), 1400);
+      // ... and moves it down line by line
+      for (const left of [2, 1]) {
+        setTour({ step: 1, left });
+        await press({ step: 1, left }, await input("down"), () => live.current.moveLine(1), left > 1 ? 300 : 1400);
+      }
+      // 2. left / right show the translations (of the line or of the page, as the reader has set), and hide them
+      setTour({ step: 2, mode });
+      await press({ step: 2, mode }, await input("left", "right"), () => show(mode, true), 2200);
+      setTour({ step: 2, mode, after: true });
+      await press({ step: 2, mode, after: true }, await input("left", "right"), () => show(mode, false), 1400);
+      // 3. the other translation type: a click on its toggle in the dock
+      const target = other === "page" ? "glosses" : "line";
+      setTour({ step: 3, target });
+      await input("target");
+      show(other, true);
+      setTour({ step: 3, target, after: true });
+      await wait(4500);
+      // Done: the reader's own settings are back and the page is theirs again.
+      holdPosition();
+      updatePrefs(saved);
+      setLineHelp(true);
+      setTour({ step: 4 });
+    } catch {
+      /* stopped */
+    }
+  }, [updatePrefs, holdPosition]);
+  const seenTourRequest = useRef(tourRequest);
+  useEffect(() => {
+    if (tourRequest === seenTourRequest.current) return;
+    seenTourRequest.current = tourRequest;
+    void startTour();
+  }, [tourRequest, startTour]);
+  // The spotlight follows the layout (the marker moves, glosses appear, the page scrolls): measured every frame.
+  const touringNow = tour !== null;
+  const tourTarget = tour?.target;
+  useEffect(() => {
+    if (!touringNow) return;
+    let frame = 0;
+    const measure = () => {
+      frame = requestAnimationFrame(measure);
+      const article = articleRef.current;
+      const all = tokens();
+      const cur = live.current.currentToken(all);
+      let text: Box | null = null;
+      if (article && cur) {
+        const a = article.getBoundingClientRect();
+        const em = parseFloat(getComputedStyle(article).fontSize) || 20;
+        const rows = lineOf(all, cur).map((t) => t.getBoundingClientRect());
+        // The whole page's glosses are on: show the page (what fits above the card); else the line.
+        const page = live.current.glossesOn;
+        const top = page ? Math.max(a.top - 8, HEADER_PX - 8) : Math.min(...rows.map((r) => r.top)) - 8;
+        const bottom = page
+          ? Math.min(a.bottom + 8, window.innerHeight - DOCK_PX - TOUR_CARD_H)
+          : Math.max(...rows.map((r) => r.bottom)) + 6;
+        const left = Math.max(4, a.left - 1.6 * em); // the marker is in the left margin
+        const right = Math.min(window.innerWidth - 4, a.right + 0.6 * em);
+        text = { x: left, y: top, w: right - left, h: Math.max(0, bottom - top) };
+      }
+      const el = tourTarget ? document.querySelector<HTMLElement>(`[data-tour-id="${tourTarget}"]`) : null;
+      const r = el?.getBoundingClientRect();
+      const target = r ? { x: r.left - 6, y: r.top - 6, w: r.width + 12, h: r.height + 12 } : null;
+      setSpot((prev) => (sameBox(prev.text, text) && sameBox(prev.target, target) ? prev : { text, target }));
+    };
+    measure();
+    return () => cancelAnimationFrame(frame);
+  }, [touringNow, tourTarget, tokens]);
+  // Leaving the reader mid-tour: the demonstrated display must not stay behind as the saved preference.
+  useEffect(
+    () => () => {
+      if (!touring.current || !tourSaved.current) return;
+      tourRun.current++;
+      try {
+        localStorage.setItem(PREFS_KEY, JSON.stringify({ ...live.current.prefs, ...tourSaved.current }));
+      } catch {
+        /* ignore */
+      }
+    },
+    [],
+  );
+
   // ---- Read aloud (src/features/audio): one segment per sentence, id "<page>:<sentence index>" ----
   const segmentId = useCallback((i: number) => `${pageNumber}:${i}`, [pageNumber]);
   // `group` = paragraph: its sentences are spoken together as connected prose (one clip, no gaps).
@@ -321,6 +498,7 @@ const ReadingView = ({
 
   useEffect(() => {
     void flushClicks();
+    stopTour();
     setClickCount(0);
     setRevealed(new Set());
     setShown(new Set());
@@ -424,10 +602,12 @@ const ReadingView = ({
         </>
       )}
       {model.hasGlosses && (
-        <HelpToggle pressed={glossesOn} onClick={toggleGlosses} label="Glosses" tip={demo ? "Show all glosses" : "Show all glosses (G)"} icon={<WholeWord />} />
+        <HelpToggle pressed={glossesOn} onClick={toggleGlosses} label="Glosses" tip={demo ? "Show all glosses" : "Show all glosses (G)"} icon={<WholeWord />}
+          tourId="glosses" />
       )}
       {model.hasGlosses && !demo && (
-        <HelpToggle pressed={lineOn} onClick={toggleLine} label="Line" tip="Glosses for the line you are on only; move with ↑ ↓, hide or show with ← → (L)" icon={<Rows3 />} />
+        <HelpToggle pressed={lineOn} onClick={toggleLine} label="Line" tip="Glosses for the line you are on only; move with ↑ ↓, hide or show with ← → (L)" icon={<Rows3 />}
+          tourId="line" />
       )}
       {model.hasTranslations && (
         <HelpToggle pressed={translationsOn}onClick={toggleTranslations} label="Translation" tip={demo ? "Sentence translations" : "Sentence translations (T)"} icon={<Languages />} />
@@ -475,7 +655,7 @@ const ReadingView = ({
           data-translations={translationsOn || undefined}
           aria-label={`Page ${pageNumber} text`}
         >
-          {dotTop !== null && <span className="line-dot" data-testid="line-dot" style={{ top: dotTop }} aria-hidden />}
+          {dotTop !== null && <span className="line-dot" data-testid="line-dot" data-tour={tour ? "" : undefined} style={{ top: dotTop }} aria-hidden />}
           {model.paragraphs.map((p) => {
             const paragraphTranslation = translationsOn
               ? p.sentences.map((s) => s.translation).filter(Boolean).join(" ")
@@ -547,6 +727,8 @@ const ReadingView = ({
           </div>
         )}
       </div>
+
+      {tour && <TourOverlay tour={tour} spot={spot} onInput={tourInput} onStop={stopTour} />}
 
       {!demo && (toggles || player) && (
         <div
@@ -650,7 +832,150 @@ function SentenceText({
   );
 }
 
-function HelpToggle({ pressed, onClick, label, tip, icon }: { pressed: boolean; onClick: () => void; label: string; tip: string; icon: ReactNode }) {
+const TOUR_STEPS = 3;
+
+/** The tour's screen: everything is dimmed except the spots, nothing underneath can be used, and a
+ *  large card next to the text asks for a key; the arrow-key cluster shows which (and can be clicked). */
+function TourOverlay({ tour, spot, onInput, onStop }: { tour: TourState; spot: TourSpot; onInput: (input: TourInput) => void; onStop: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const done = tour.step === 4;
+  useEffect(() => {
+    const el = ref.current;
+    const block = (e: Event) => e.preventDefault();
+    el?.addEventListener("wheel", block, { passive: false });
+    el?.addEventListener("touchmove", block, { passive: false });
+    // Capture: the reader's and the player's shortcuts never see a key while the tour runs.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || /^F\d+$/.test(e.key)) return; // browser shortcuts
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (e.key === "Escape" || (done && e.key === "Enter")) onStop();
+      else if (e.key === "ArrowDown") onInput("down");
+      else if (e.key === "ArrowLeft") onInput("left");
+      else if (e.key === "ArrowRight") onInput("right");
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      el?.removeEventListener("wheel", block);
+      el?.removeEventListener("touchmove", block);
+      window.removeEventListener("keydown", onKey, true);
+    };
+  }, [done, onInput, onStop]);
+
+  const text = spot.text;
+  const vh = window.innerHeight;
+  // The card sits right under the text being shown (above it when there is no room below).
+  const below = text ? text.y + text.h + 20 : vh / 2 - TOUR_CARD_H / 2;
+  const cardTop = text && below + TOUR_CARD_H > vh - DOCK_PX + 20 ? Math.max(8, text.y - 20 - TOUR_CARD_H) : below;
+  const hole = (b: Box, animate: boolean) =>
+    ({ x: b.x, y: b.y, width: b.w, height: b.h, transition: animate ? "x .3s ease, y .3s ease, width .3s ease, height .3s ease" : undefined }) as CSSProperties;
+
+  const title =
+    tour.step === 0 ? <>Press <b>↓</b> on your keyboard</>
+    : tour.step === 1 ? (tour.left === 1 ? <>Once more: press <b>↓</b></> : <>Now press <b>↓</b> again</>)
+    : tour.step === 2 ? (tour.after ? <>Press <b>←</b> or <b>→</b> again to hide them</> : <>Press <b>←</b> or <b>→</b> to see the translations</>)
+    : tour.step === 3 ? (tour.after ? (tour.target === "line" ? <>This is Line</> : <>This is Glosses</>) : <>Click the highlighted button below</>)
+    : <>That's it. Your turn!</>;
+  const detail =
+    tour.step === 0 ? "It puts a golden marker on the line you are reading."
+    : tour.step === 1 ? "The marker moves down one line per press. ↑ takes it back up."
+    : tour.step === 2 ? (tour.after ? "Read on your own and look only when you need to."
+        : tour.mode === "line" ? "They appear under each word of the line you are on." : "They appear under each word on the page.")
+    : tour.step === 3 ? (!tour.after ? "It changes the translation type."
+        : tour.target === "line" ? "Translations only for the line you are on. They follow the marker as you move."
+        : "Translations for the whole page at once.")
+    : "You can also click any word to translate just that one.";
+
+  return (
+    <div ref={ref} className="fixed inset-0 z-[60] font-sans animate-in fade-in duration-300" data-testid="reader-tour">
+      <svg className="absolute inset-0 h-full w-full" aria-hidden>
+        <defs>
+          <mask id="reader-tour-mask">
+            <rect width="100%" height="100%" fill="white" />
+            {text && <rect rx={12} fill="black" style={hole(text, true)} />}
+            {spot.target && <rect rx={22} fill="black" style={hole(spot.target, false)} />}
+          </mask>
+        </defs>
+        <rect width="100%" height="100%" fill="rgb(0 0 0 / 0.74)" mask="url(#reader-tour-mask)" />
+        {text && <rect rx={12} fill="none" stroke="hsl(43 90% 52% / 0.9)" strokeWidth={2} style={hole(text, true)} />}
+        {spot.target && <rect className="tour-ring" rx={22} fill="none" stroke="hsl(43 90% 52%)" strokeWidth={3} style={hole(spot.target, false)} />}
+      </svg>
+      {spot.target && tour.step === 3 && !tour.after && (
+        <button
+          type="button"
+          className="absolute cursor-pointer rounded-full"
+          style={{ left: spot.target.x, top: spot.target.y, width: spot.target.w, height: spot.target.h }}
+          aria-label={tour.target === "line" ? "Line" : "Glosses"}
+          onClick={() => onInput("target")}
+        />
+      )}
+
+      <div
+        className="absolute left-1/2 w-[min(36rem,calc(100vw-1.5rem))] -translate-x-1/2 rounded-2xl border bg-popover p-5 text-popover-foreground shadow-2xl transition-[top] duration-300 sm:p-6"
+        style={{ top: cardTop }}
+        role="status"
+        aria-live="polite"
+      >
+        <div className="flex items-center gap-5 sm:gap-6">
+          {tour.step <= 2 && (
+            <div className="grid shrink-0 grid-cols-3 gap-1.5">
+              <span />
+              <TourKey label="Arrow up">↑</TourKey>
+              <span />
+              <TourKey label="Arrow left" active={tour.step === 2} pressed={tour.pressed === "left"} onPress={() => onInput("left")}>←</TourKey>
+              <TourKey label="Arrow down" active={tour.step < 2} pressed={tour.pressed === "down"} onPress={() => onInput("down")}>↓</TourKey>
+              <TourKey label="Arrow right" active={tour.step === 2} pressed={tour.pressed === "right"} onPress={() => onInput("right")}>→</TourKey>
+            </div>
+          )}
+          {tour.step === 3 && (
+            <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-accent/15 text-accent [&_svg]:h-8 [&_svg]:w-8" aria-hidden>
+              {tour.target === "line" ? <Rows3 /> : <WholeWord />}
+            </span>
+          )}
+          <div className="min-w-0">
+            <p className="text-xl font-semibold leading-snug sm:text-2xl">{title}</p>
+            <p className="mt-1.5 text-base text-muted-foreground">{detail}</p>
+          </div>
+        </div>
+        <div className="mt-5 flex items-center justify-between gap-3">
+          <span className="flex items-center gap-1.5" aria-label={done ? "Finished" : `Step ${Math.max(1, tour.step)} of ${TOUR_STEPS}`}>
+            {Array.from({ length: TOUR_STEPS }, (_, i) => (
+              <span key={i} className={cn("h-1.5 w-6 rounded-full bg-muted-foreground/25 transition-colors", Math.max(1, tour.step) > i && "bg-accent")} />
+            ))}
+          </span>
+          {done ? (
+            <Button autoFocus onClick={onStop}>Start reading</Button>
+          ) : (
+            <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={onStop}>
+              Skip (Esc)
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** A key of the tour's arrow cluster: it glows while the tour waits for it and sinks when it is pressed
+ *  (on the keyboard, or here with a click or a tap). */
+function TourKey({ label, active, pressed, onPress, children }: { label: string; active?: boolean; pressed?: boolean; onPress?: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      className="tour-key"
+      aria-label={label}
+      tabIndex={-1}
+      disabled={!active}
+      data-active={active || undefined}
+      data-pressed={pressed || undefined}
+      onClick={onPress}
+    >
+      {children}
+    </button>
+  );
+}
+
+function HelpToggle({ pressed, onClick, label, tip, icon, tourId }: { pressed: boolean; onClick: () => void; label: string; tip: string; icon: ReactNode; tourId?: string }) {
   return (
     <Tip label={tip} side="top">
       <Button
@@ -658,6 +983,7 @@ function HelpToggle({ pressed, onClick, label, tip, icon }: { pressed: boolean; 
         size="sm"
         aria-pressed={pressed}
         aria-label={label}
+        data-tour-id={tourId}
         onClick={onClick}
         onMouseDown={(e) => e.preventDefault() /* keep Space for play/pause */}
         className={cn(

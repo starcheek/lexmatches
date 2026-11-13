@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "next-themes";
 import {
-  AlertTriangle, ArrowLeft, BookOpen, FileDown, FileImage, FileText, Keyboard, Languages, Loader2, MoreVertical, RotateCcw,
+  AlertTriangle, ArrowLeft, BookOpen, FileDown, FileImage, FileText, Keyboard, Languages, Loader2, MoreVertical, RotateCcw, Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError, isLoggedIn, type Page } from "@/lib/api";
@@ -61,6 +61,7 @@ const Read = () => {
       /* shown again next time */
     }
   };
+  const [tourRequest, setTourRequest] = useState(0); // bumped to start the reader's guided tour
   const [exporting, setExporting] = useState(false);
   const initialised = useRef(false);
 
@@ -296,6 +297,18 @@ const Read = () => {
               <Keyboard /> <span className="hidden sm:inline">Shortcuts</span>
             </Button>
           </Tip>
+          {/* The tour is about the arrow keys, so it is offered where there is a keyboard-sized screen. */}
+          {viewMode === "text" && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="hidden shrink-0 rounded-full border-accent/50 text-accent hover:bg-accent/10 hover:text-accent md:inline-flex"
+              onClick={() => setTourRequest((n) => n + 1)}
+              data-testid="tour-button"
+            >
+              <Sparkles /> Show me how to use it
+            </Button>
+          )}
           <div className="flex-1" />
           <PageSearch bookId={book.id} onPageSelect={goToPage} currentPage={currentPage} />
           <DropdownMenu>
@@ -376,6 +389,7 @@ const Read = () => {
             originalLocale={book.original_locale}
             onNextPage={handleNext}
             onPrevPage={handlePrev}
+            tourRequest={tourRequest}
             banner={
               <PageBanner
                 page={page}
@@ -426,6 +440,18 @@ const Read = () => {
             ))}
           </dl>
           <p className="text-xs text-muted-foreground">Shortcuts work while reading, not while typing in a field. You can reopen this from “Shortcuts” in the top bar.</p>
+          {viewMode === "text" && (
+            <Button
+              variant="outline"
+              className="hidden md:inline-flex"
+              onClick={() => {
+                closeHelp(false);
+                setTourRequest((n) => n + 1);
+              }}
+            >
+              <Sparkles /> Show me how to use it
+            </Button>
+          )}
           <Button onClick={() => closeHelp(false)}>Got it</Button>
         </DialogContent>
       </Dialog>

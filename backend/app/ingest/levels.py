@@ -93,7 +93,9 @@ _PG_PRODUCER = re.compile(r"project gutenberg|gutenberg\.org|^produced by|transc
 _EBOOK_META = re.compile(r"\b(Title|Author|Release [Dd]ate|Language|Credits|Most recently updated|Illustrator|"
                          r"Translator|Produced by|Original publication):")
 TOC_HEAD = re.compile(r"^\s*(contents|table of contents|table des matières|inhalt|inhaltsverzeichnis|содержание|"
-                      r"оглавление|índice|indice|sumário|saturs|目次)\s*\.?$", re.I)
+                      r"оглавление|índice|indice|sumário|saturs|目次|inhoud(sopgave)?|spis treści|obsah|зміст|"
+                      r"innehåll(sförteckning)?|innhold(sfortegnelse)?|indhold(sfortegnelse)?|sisällys(luettelo)?|"
+                      r"cuprins|tartalom(jegyzék)?|περιεχόμενα|içindekiler|índex|sumari)\s*\.?$", re.I)
 _LEADER = re.compile(r"(?:\.\s?){3,}\s*\d+|…{2,}\s*\d+")
 _REF_MARK = re.compile(r"\[(\d{1,3}[a-z]?|[a-z]|note \d+|citation needed|réf\. nécessaire|источник не указан[^\]]*|"
                        r"nicht belegt|carece de fontes|nepieciešama atsauce|要出典[^\]]*|[ivx]+)\]", re.I)
@@ -182,11 +184,32 @@ def _flag_toc(doc: Document) -> None:
 
 
 # ------------------------------------------------------------------------------------------------ L3 (reflow)
+# Chapter / part words of the newer languages (also used by the PDF CHAPTER pattern):
+#   CHAPTER_KW  keyword + any word: "Rozdział pierwszy", "Κεφάλαιο πρώτο", "Capitolul I"
+#   PART_KW     common words / sentence starters ("Część ludzi...", "Parte de la gente", es/it "del", fi "luku" =
+#               number): keyword + numeral, or + one word ending the line ("Część pierwsza", "Partea a doua")
+#   FIRST_KW    may follow an ordinal word ("Első fejezet", "Birinci Bölüm", "Ensimmäinen luku", "Primera parte")
+#   Any keyword may follow "1." / "I." ("1. fejezet", "I. rész", "1. Bölüm", "2. luku", "1. Kapitel").
+CHAPTER_KW = (r"capitolo|capitolul|capítol|hoofdstuk|rozdział|розділ|kapitola|kapittel|fejezet|κεφ[αά]λαιο")
+PART_KW = (r"del|delen|deel|part|parte|partea|libro|llibre|część|księga|частина|книга|část|kniha|osa|luku|kirja|"
+           r"rész|könyv|b[öo]l[üu]m|k[ıi]s[ıi]m|kitap|μ[εέ]ρος|βιβλ[ιί]ο")
+FIRST_KW = (r"kapitel|kapitlet|kapittel|hoofdstuk|deel|del|delen|part|parte|rozdział|część|księga|kapitola|část|"
+            r"kniha|luku|osa|kirja|fejezet|rész|könyv|b[öo]l[üu]m|k[ıi]s[ıi]m|kitap|μ[εέ]ρος|κεφ[αά]λαιο")
+_TAIL = r"(\s*[.:—–]\s*.{0,60})?"  # optional title after the heading words: "Część pierwsza: Powrót"
+HEADING_FORMS = (
+    rf"({CHAPTER_KW})\s+([ivxlcdm]+|\d+|[^\W\d_]+)\b.{{0,60}}|"
+    rf"({PART_KW})\s+((\d+|(?-i:[IVXLCDM]+))\b.{{0,60}}|(al?\s+)?[^\W\d_]+{_TAIL})|"
+    rf"(\d{{1,3}}|[ivxlcdm]{{1,7}})\.\s*({CHAPTER_KW}|{PART_KW}|{FIRST_KW})\b.{{0,60}}|"
+    rf"[^\W\d_]+\s+({FIRST_KW}){_TAIL}")
 HEADING_RX = re.compile(
-    r"^\s*((chapitre|chapter|kapitel|capítulo|capitulo|глава|часть|livre|book|teil|parte|nodaļa|daļa|acte?|scène|"
-    r"scene|akt|szene|действие|явление)\s+([ivxlcdm]+|\d+|premier|première|first|[a-zа-я]+)\b.{0,60}|"
-    r"[IVXLCDM]{1,7}\.?|\d{1,3}\.?|第[一二三四五六七八九十百〇0-9]+[章話回節部])\s*$", re.I)
-LEVEL1 = re.compile(r"^\s*(livre|book|tome|volume|part|partie|teil|часть|том|parte|daļa|第.+部)\b", re.I)
+    r"^\s*((chapitre|chapter|kapitel|capítulo|capitulo|глава|часть|livre|book|teil|nodaļa|daļa|acte?|scène|"
+    r"scene|akt|szene|действие|явление)\s+([ivxlcdm]+|\d+|premier|première|first|[^\W\d_]+)\b.{0,60}|"
+    + HEADING_FORMS + r"|[IVXLCDM]{1,7}\.?|\d{1,3}\.?|第[一二三四五六七八九十百〇0-9]+[章話回節部])\s*$", re.I)
+_LEVEL1_KW = (r"deel|delen|część|księga|частина|книга|část|kniha|osa|kirja|rész|könyv|k[ıi]s[ıi]m|kitap|μ[εέ]ρος|"
+              r"βιβλ[ιί]ο|τόμος|partea|libro|llibre|bok|bog|del(?=\s+(\d|(?-i:[IVXLCDM]+)\b))")
+LEVEL1 = re.compile(r"^\s*(livre|book|tome|volume|part|partie|teil|часть|том|parte|daļa|第.+部|" + _LEVEL1_KW + r")\b|"
+                    r"^\s*((\d{1,3}|[ivxlcdm]{1,7})\.\s*|[^\W\d_]+\s+)(teil|part|parte|del|" + _LEVEL1_KW + r")\b",
+                    re.I)
 TERMINAL = re.compile(r"[.!?…»”\"')\]:;。！？」』]\s*$")
 
 

@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 
 from app.ingest.formats.pdf import Line, Page
 from app.ingest.ir import Audit, Block
+from app.ingest.levels import HEADING_FORMS
 
 TERMINAL = re.compile(r"[.!?…:;»\"”’)\]。！？」』]\s*$")
 SENT_END = re.compile(r"[.!?…»\"”。！？」』]\s*$")
@@ -24,7 +25,7 @@ BULLET_SYM = re.compile(r"^\s*[•◦▪▫●○■□►▸‣⁃∙·]\s*")
 CAPTION = re.compile(r"^\s*(figure|fig\.|table|tableau|abbildung|abb\.|tabelle|рис\.|рисунок|таблица|attēls|tabula|"
                      r"figura|tabela|quadro|図|表)\s*\d+(\.\d+)?\s*[.:|]", re.I)
 CHAPTER = re.compile(r"^\s*((chapter|chapitre|kapitel|глава|capítulo|capitulo|nodaļa|part|partie|livre|book|canto|"
-                     r"teil|buch|часть|daļa|dziedājums)\b.{0,60}|[IVXLC]{1,6}\.?|\d{1,3}\.?|"
+                     r"teil|buch|часть|daļa|dziedājums)\b.{0,60}|" + HEADING_FORMS + r"|[IVXLC]{1,6}\.?|\d{1,3}\.?|"
                      r"第[一二三四五六七八九十百〇\d]+[章節回部])\s*$", re.I)
 KEEP_HYPHEN_SUFFIX = {
     "fr": {"il", "ils", "elle", "elles", "on", "je", "tu", "nous", "vous", "moi", "toi", "lui", "leur", "leurs", "y",

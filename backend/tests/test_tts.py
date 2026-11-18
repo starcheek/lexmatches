@@ -154,6 +154,10 @@ def test_spoken_units():
     assert spoken_units("«Oui» mot—mot fin— (3) a(2)", "fr") == ["Oui", "mot, mot", "fin,", "(3)", "a"]
     assert spoken_units("Mr. Smith, e.g. this", "en") == ["Mister", "Smith,", "for example", "this"]
     assert spoken_units("т.е. всё", "ru") == ["то есть", "всё"]
+    # newer languages: one display token stays one spoken unit (word highlighting lines up)
+    assert spoken_units("Kupił np. chleb, mleko itd.", "pl") == ["Kupił", "na przykład", "chleb,", "mleko", "i tak dalej"]
+    assert spoken_units("Το είπε π.χ. ο κ. Παπαδόπουλος", "el") == ["Το", "είπε", "παραδείγματος χάρη", "ο", "κύριος", "Παπαδόπουλος"]
+    assert spoken_units("Han kom osv.", "sv") == ["Han", "kom", "och så vidare"]
     assert spoken_units("l’homme", "fr") == ["l'homme"]
 
 

@@ -33,9 +33,41 @@ FUNC = {
           "são ou quando muito nos já está também",
     "lv": "un ir ar par uz no kas bet ka tas to kā lai arī vai jau ne tā viņš viņa bija pie pēc līdz tad šo šis savu "
           "tik var gan nav tiek",
+    "es": "el la los las de del y en que a un una por con no se su sus es para al lo como más pero o fue ha le me "
+          "mi sin sobre este esta muy ya también entre cuando era",
+    "it": "il lo la i gli le di da in con su per tra un una uno e è che non si ma come anche del della dei delle al "
+          "alla nel nella ho ha sono era mi ti ci suo sua più l",
+    "nl": "de het een en van in is op te dat die niet zijn met voor aan er ook als maar om bij of was nog ze hij zij "
+          "wat zo dan door uit naar over tot wel hem haar ik je we heeft werd",
+    "pl": "i w na z się nie że do to jest jak o a co po od za ale tak jego jej przez dla już tylko czy go mu by być "
+          "był była było ich ten ta te który która jako tym",
+    "uk": "і й в у на не що з із до та як а це за від по його її він вона вони ми ви я але же б би був була було так "
+          "вже тільки для ще ж чи щоб коли який яка є",
+    "cs": "a v se na je že to s z do o k i ve jsem ale jak by byl bylo byla jeho jsou pro jako za po od tak už jen "
+          "co který která ten tom když jsme mu si",
+    "sv": "och i att det som en på är av för med till den har de inte om ett han hon var jag men sig från så kan man "
+          "vid eller när där skulle hade vi dem detta också",
+    "no": "og i det som en på er av for med til den har de ikke om et han hun var jeg men seg fra så kan man ved "
+          "eller når der skulle hadde vi dem dette også å",
+    "da": "og i at det som en på er af for med til den har de ikke om et han hun var jeg men sig fra så kan man ved "
+          "eller når der skulle havde vi dem dette også",
+    "fi": "ja on ei se että oli hän mutta kuin niin tai kun jo myös ole olla ovat olen sen hänen me te he minä sinä "
+          "mitä mikä joka jos vain nyt sitten vielä siitä siinä tämä tässä kanssa koska",
+    "ro": "și şi în de la cu nu pe o un a ce să se din care este sau mai dar ca el ea ei au fost sunt am fi pentru "
+          "prin după cum când lui le îi îl acest această sa său",
+    "hu": "a az és hogy nem is egy meg de csak ez el mint már volt van ha mi vagy én te ő még kell lesz azt ezt "
+          "akkor pedig sem minden ki be fel le után",
+    "el": "και το να η ο της του τα την με σε δεν θα από που για τον οι στο στη στην στα των ένα μια είναι ήταν "
+          "αλλά ή αυτό αυτή ότι πως σαν μου σου μας σας τους τις τι",
+    "tr": "ve bir bu da de ile için çok ne o gibi daha ama kadar sonra en ben sen biz siz onlar şu her mi mı mu mü "
+          "değil var yok olarak olan diye ki ise hem göre",
+    "ca": "el la els les de del i a en que es un una per amb no al com però més o seu seva hi ha va són era està "
+          "pel als dels aquest aquesta li ho ja ni l d",
 }
 FUNC = {k: set(v.split()) for k, v in FUNC.items()}
-ALL_FUNC = set().union(*FUNC.values())
+# Union for unknown languages, without one-letter words: with 21 languages they cover half the alphabet and would
+# make an "A B C D ..." index or initials look like prose.
+ALL_FUNC = {w for ws in FUNC.values() for w in ws if len(w) > 1}
 JA_PARTICLES = set("のはがをにでともへやかたしてだする")
 NAV_VOCAB = set("""home|menu|search|log in|login|sign in|sign up|register|subscribe|newsletter|share|tweet|email|print|
 cookie|cookies|accept|accept all|reject|privacy|terms|contact|about|advertise|advertisement|sponsored|related|read more|

@@ -29,7 +29,10 @@ FN_MARK = re.compile(r"^\s*(\(?\d{1,3}[\).]?|\[\d{1,3}\]|[*†‡§¶]+|[⁰¹²
 SUPERSCRIPT_DIGITS = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789")
 CJK = re.compile(r"[぀-ヿ㐀-鿿豈-﫿　-〿＀-￯]")
 SINGLE_LETTER_WORDS = {"ru": set("вкосуияаВКОСУИЯА"), "pt": set("aeoAEO"), "fr": set("àaAyY"), "en": set("aAI"),
-                       "lv": set("uUaA")}
+                       "lv": set("uUaA"), "es": set("aeouyAEOUY"), "it": set("aeioèAEIOÈ"), "nl": set("uU"),
+                       "pl": set("aiouwzAIOUWZ"), "cs": set("aiksouvzAIKSOUVZ"), "uk": set("авзійуоєяАВЗІЙУОЄЯ"),
+                       "sv": set("iåöIÅÖ"), "no": set("iåIÅ"), "da": set("iåIÅ"), "hu": set("asAS"),
+                       "ro": set("aoeîAOEÎ"), "el": set("οηήαΟΗΉΑ"), "tr": set("oO"), "ca": set("aioeAIOE")}
 
 
 def body_font_size(pages: list[Page]) -> float:
@@ -43,12 +46,13 @@ def body_font_size(pages: list[Page]) -> float:
 
 # ------------------------------------------------------------------------------------------------ L1
 def _letterspacing(s: str, lang: str) -> str:
-    """'g e s p e r r t' -> 'gesperrt' (>= 4 single letters in a row that are not real one-letter words)."""
+    """'g e s p e r r t' -> 'gesperrt' (>= 4 single letters in a row; kept as is when >= 3/4 of them are real
+    one-letter words - Polish 'R o z d z i a ł' has four of a i o u w z and is still joined)."""
     singles = SINGLE_LETTER_WORDS.get(lang, set())
 
     def fix(m):
         toks = m.group(1).split(" ")
-        return m.group(0) if sum(1 for t in toks if t in singles) > 1 else "".join(toks)
+        return m.group(0) if sum(1 for t in toks if t in singles) >= 0.75 * len(toks) else "".join(toks)
     return re.sub(r"(?<![\w])((?:\w ){3,}\w)(?![\w])(?: (?=[,.;:!?]))?", fix, s)
 
 

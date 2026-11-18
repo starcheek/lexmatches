@@ -63,7 +63,7 @@ export default {
       },
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],
-        serif: ["Crimson Pro", "Georgia", "serif"],
+        serif: ["Crimson Pro", "Noto Serif", "Georgia", "serif"],
       },
       boxShadow: {
         soft: "var(--shadow-soft)",

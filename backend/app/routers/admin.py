@@ -32,10 +32,24 @@ class AppSettings(BaseModel):
     signup_open: bool
 
 
+# Generated passwords are easy to read out and type on a phone: "maple-river-482" (128 x 128 x 900 ≈ 15 million).
+_WORDS = """
+apple amber anchor arrow autumn badge basil beach berry birch blue bloom breeze brick brook butter cabin camel
+candle canyon cedar cherry cider cloud clover cocoa comet coral cotton crane daisy delta desert dolphin dove
+dream eagle ember falcon fern field flame forest fox garden ginger glade grape harbor hazel honey island ivory
+jade jasmine kettle kiwi lagoon lake lantern lemon lily lotus maple meadow melon mint moon morning moss nectar
+night oak ocean olive orange orchid otter panda paper peach pearl pebble pepper pine planet plum pony quartz
+rabbit rain raven reef river robin rose ruby saffron sage sand shell silver sky snow sparrow spring spruce star
+stone storm sugar summer sun swan tiger tulip valley velvet violet walnut wave willow window winter wolf zebra
+""".split()
+
+
 def _password(given: str | None) -> str:
-    password = given or secrets.token_urlsafe(9)
-    if not 8 <= len(password) <= 72:
-        raise HTTPException(400, "Password must be 8-72 characters")
+    """The owner's own choice (6+ characters: the owner picks it and passes it on), or an easy generated one."""
+    password = (given or "").strip() or (
+        f"{secrets.choice(_WORDS)}-{secrets.choice(_WORDS)}-{secrets.randbelow(900) + 100}")
+    if not 6 <= len(password) <= 72:
+        raise HTTPException(400, "Password must be 6-72 characters")
     return password
 
 

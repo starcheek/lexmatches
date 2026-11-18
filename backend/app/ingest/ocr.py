@@ -9,12 +9,15 @@ Until an OCR engine exists it raises OcrUnavailable and the book gets the warnin
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections import Counter
 
 from app.ingest.ir import Block
 
-SCRIPT = {"ru": "cyr", "uk": "cyr", "ja": "cjk", "zh": "cjk", "ko": "cjk"}
-VOWELS = {"lat": set("aeiouyàâäéèêëîïôöùûüÿæœáíóúãõāēīūåøąęė"), "cyr": set("аеёиоуыэюяіїє")}
+SCRIPT = {"ru": "cyr", "uk": "cyr", "el": "grk", "ja": "cjk", "zh": "cjk", "ko": "cjk"}
+VOWELS = {"lat": set("aeiouyàâäéèêëîïôöùûüÿæœáíóúãõāēīūåøąęėìòěůýőűăı") | {"i̇"},  # "i̇" = "İ".lower()
+          "cyr": set("аеёиоуыэюяіїє"),
+          "grk": set("αεηιουωάέήίόύώϊϋΐΰ")}
 
 
 class OcrUnavailable(Exception):
@@ -31,6 +34,8 @@ def _script(c: str) -> str:
     o = ord(c)
     if 0x0400 <= o <= 0x04FF:
         return "cyr"
+    if 0x0370 <= o <= 0x03FF or 0x1F00 <= o <= 0x1FFF:
+        return "grk"
     if 0x3040 <= o <= 0x30FF or 0x3400 <= o <= 0x9FFF or 0xF900 <= o <= 0xFAFF or 0xAC00 <= o <= 0xD7AF:
         return "cjk"
     if c.isalpha() and o < 0x0250 or 0x1E00 <= o <= 0x1EFF:
@@ -52,12 +57,14 @@ def text_garbage(text: str, lang: str) -> float:
     bad = sum(1 for c in t if c == "�" or 0xE000 <= ord(c) <= 0xF8FF or (ord(c) < 32 and c not in "\n\t")) / len(t)
     score = 0.0
     if exp in VOWELS and len(letters) > 50:
-        v = sum(1 for c in letters if c.lower() in VOWELS[exp]) / nl
+        vowels = VOWELS[exp]  # polytonic Greek (U+1Fxx) is compared by its base letter
+        v = sum(1 for c in letters if c.lower() in vowels
+                or (exp == "grk" and unicodedata.normalize("NFD", c.lower())[:1] in vowels)) / nl
         if v < 0.22 or v > 0.68:
             score += 0.4
     toks = re.findall(r"\S+", t)
     if toks and exp != "cjk":
-        weird = sum(1 for w in toks if re.search(r"[a-zа-я][A-ZА-Я]", w)
+        weird = sum(1 for w in toks if any(a.islower() and b.isupper() for a, b in zip(w, w[1:]))  # any script
                     or re.search(r"[^\w\s.,;:!?'’\"“”«»()\-—–…%/]{2,}", w)) / len(toks)
         score += min(0.5, weird * 2)
     score += min(1.0, bad * 10)

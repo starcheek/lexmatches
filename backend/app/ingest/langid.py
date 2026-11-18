@@ -3,7 +3,11 @@ see README). Used for the document language vote and for scoring candidate decod
 import re
 
 _ISO3 = {"fre": "fr", "fra": "fr", "eng": "en", "ger": "de", "deu": "de", "rus": "ru", "por": "pt", "lav": "lv",
-         "jpn": "ja", "spa": "es", "ita": "it", "lat": "la", "ukr": "uk", "pol": "pl", "lit": "lt", "est": "et"}
+         "jpn": "ja", "spa": "es", "ita": "it", "lat": "la", "ukr": "uk", "pol": "pl", "lit": "lt", "est": "et",
+         "dut": "nl", "nld": "nl", "cze": "cs", "ces": "cs", "swe": "sv", "nor": "no", "nob": "no", "nno": "no",
+         "dan": "da", "fin": "fi", "rum": "ro", "ron": "ro", "hun": "hu", "gre": "el", "ell": "el", "tur": "tr",
+         "cat": "ca"}
+_ALIAS2 = {"nb": "no", "nn": "no"}  # Bokmål / Nynorsk (fastText says "nn"; documents declare "nb") -> the app's "no"
 
 
 def norm_lang(code: str | None) -> str | None:
@@ -13,7 +17,7 @@ def norm_lang(code: str | None) -> str | None:
     c = code.strip().lower().replace("_", "-").split("-")[0]
     if len(c) == 3:
         return _ISO3.get(c)
-    return c if len(c) == 2 and c.isalpha() else None
+    return _ALIAS2.get(c, c) if len(c) == 2 and c.isalpha() else None
 
 
 _detector = None

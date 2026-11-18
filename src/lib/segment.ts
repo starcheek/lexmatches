@@ -12,7 +12,7 @@ const ENDS_SENTENCE = /[.!?…:»"”’)\]]$/;
 const STARTS_DIALOGUE = /^[—–«“„"]|^- /;
 const BOUNDARY = /[.!?…]+[»"”’)\]]*\s+/g;
 const ABBREV =
-  /(?:^|\s)(?:[A-ZА-ЯЁ]|Mr|Mrs|Ms|Dr|St|Mme|Mlle|MM|Mgr|Jr|Sr|Prof|Hr|Fr|Nr|vs|etc|cf|z\.B|usw|bzw|т|г|гг|им|ул|см|tj|u\.c|piem|Sr\.ª|Dr\.ª|D)\.$/;
+  /(?:^|\s)(?:\p{Lu}|Mr|Mrs|Ms|Dr|St|Mme|Mlle|MM|Mgr|Jr|Sr|Prof|Hr|Fr|Nr|vs|etc|cf|z\.B|usw|bzw|т|г|гг|им|ул|см|tj|u\.c|piem|Sr\.ª|Dr\.ª|D)\.$/u; // \p{Lu}: an initial in any script
 const MAX_SENTENCE = 500;
 // Python str.isdigit(): decimal digits plus superscript/subscript digits (footnote markers like "²").
 const IS_DIGIT = /^(?:\p{Nd}|[²³¹⁰-⁹₀-₉])$/u;

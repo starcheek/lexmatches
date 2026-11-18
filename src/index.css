@@ -135,7 +135,8 @@ All colors MUST be HSL.
     .reader-column[data-translations] { max-width: calc(var(--reader-col) + 32rem); }
   }
   .reading-text {
-    font-family: "Crimson Pro", Georgia, serif;
+    /* Crimson Pro has no Greek: Noto Serif covers it (only its Greek files download, via unicode-range) */
+    font-family: "Crimson Pro", "Noto Serif", Georgia, serif;
     font-size: calc(1.1875rem * var(--reader-scale, 1)); /* 19px */
     line-height: 1.65;
     color: hsl(var(--foreground));

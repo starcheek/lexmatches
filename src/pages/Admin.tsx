@@ -88,6 +88,7 @@ const Admin = () => {
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [signupOpen, setSignupOpen] = useState<boolean | null>(null);
   const [email, setEmail] = useState("");
+  const [newPassword, setNewPassword] = useState(""); // empty = an easy generated one
   const [issued, setIssued] = useState<Issued | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [problems, setProblems] = useState<Problems | null>(null);
@@ -122,8 +123,9 @@ const Admin = () => {
   const create = (e: FormEvent) => {
     e.preventDefault();
     void run(async () => {
-      setIssued(await call<Issued>(token, "POST", "/users", { email }));
+      setIssued(await call<Issued>(token, "POST", "/users", { email, password: newPassword.trim() || null }));
       setEmail("");
+      setNewPassword("");
     });
   };
 
@@ -204,13 +206,29 @@ const Admin = () => {
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">New test account</CardTitle>
-          <CardDescription>A password is generated and shown once. Send the login details to the tester.</CardDescription>
+          <CardDescription>
+            Choose a password (6+ characters) or leave it empty for an easy one like “maple-river-482”. Send the login details to the
+            tester.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <form className="flex flex-wrap items-end gap-3" onSubmit={create}>
             <div className="min-w-64 flex-1 space-y-1">
               <Label htmlFor="new-email">Email</Label>
               <Input id="new-email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tester@example.com" />
+            </div>
+            <div className="min-w-48 space-y-1">
+              <Label htmlFor="new-password">Password (optional)</Label>
+              <Input
+                id="new-password"
+                type="text"
+                autoComplete="off"
+                minLength={6}
+                maxLength={72}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="generate one"
+              />
             </div>
             <Button type="submit">
               <UserPlus /> Create account
@@ -373,7 +391,9 @@ const Admin = () => {
                       title="New password"
                       onClick={() =>
                         void run(async () => {
-                          const r = await call<{ password: string }>(token, "POST", `/users/${u.id}/password`, {});
+                          const chosen = window.prompt(`New password for ${u.email} (6+ characters), or leave empty to generate an easy one:`, "");
+                          if (chosen === null) return; // cancelled
+                          const r = await call<{ password: string }>(token, "POST", `/users/${u.id}/password`, { password: chosen.trim() || null });
                           setIssued({ email: u.email, password: r.password });
                         })
                       }

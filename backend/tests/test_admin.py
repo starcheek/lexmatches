@@ -1,3 +1,4 @@
+import re
 import uuid
 
 ADMIN = {"Authorization": "Bearer test-admin-token"}
@@ -13,9 +14,21 @@ def test_test_account_lifecycle(client, pdf_book):
     assert client.post("/api/admin/users", headers=ADMIN, json={"email": "nope"}).status_code == 422
     assert client.post("/api/auth/login", json={"email": email, "password": made["password"]}).status_code == 200
 
+    assert re.fullmatch(r"[a-z]+-[a-z]+-\d{3}", made["password"])  # easy to type: maple-river-482
+
     new = client.post(f"/api/admin/users/{made['id']}/password", headers=ADMIN, json={}).json()["password"]
     assert client.post("/api/auth/login", json={"email": email, "password": made["password"]}).status_code == 401
     assert client.post("/api/auth/login", json={"email": email, "password": new}).status_code == 200
+
+    # the owner's own password, also short and simple ones
+    r = client.post(f"/api/admin/users/{made['id']}/password", headers=ADMIN, json={"password": " lex2026 "})
+    assert r.json() == {"password": "lex2026"}
+    assert client.post("/api/auth/login", json={"email": email, "password": "lex2026"}).status_code == 200
+    assert client.post(f"/api/admin/users/{made['id']}/password", headers=ADMIN, json={"password": "abc"}).status_code == 400
+    custom = client.post("/api/admin/users", headers=ADMIN,
+                         json={"email": f"c-{uuid.uuid4().hex[:8]}@example.com", "password": "reader1"}).json()
+    assert custom["password"] == "reader1"
+    client.delete(f"/api/admin/users/{custom['id']}", headers=ADMIN)
 
     # the list shows usage; deleting an account takes its books with it
     owner, book = pdf_book

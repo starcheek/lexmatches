@@ -15,9 +15,18 @@ _ALIASES = {"iso-8859-1": "cp1252", "latin-1": "cp1252", "latin1": "cp1252", "us
 _META = re.compile(rb"""<meta[^>]+charset\s*=\s*["']?\s*([\w:.-]+)""", re.I)
 _XML = re.compile(rb"""<\?xml[^>]+encoding\s*=\s*["']([\w:.-]+)["']""", re.I)
 _C1 = re.compile("[\x80-\x9f]")
-CANDIDATES = ["cp1252", "cp1250", "cp1257", "iso8859-13", "cp1251", "koi8-r", "cp866", "iso8859-5", "cp932", "euc_jp",
-              "mac_roman"]
-_CYRILLIC = ("cp1251", "koi8-r", "cp866", "iso8859-5")
+# Ties go to the earlier codec (cp1252 before cp1254 for Western text, cp1253 before iso8859-7, koi8-r before koi8-u
+# for Russian). iso8859-2 = Polish/Czech files from Unix (ą ś ź š ž sit elsewhere than in cp1250); Turkish cp1254
+# also reads iso8859-9; Ukrainian koi8-u (і ї є ґ are box-drawing characters in koi8-r).
+CANDIDATES = ["cp1252", "cp1250", "iso8859-2", "cp1257", "iso8859-13", "cp1254", "cp1253", "iso8859-7", "cp1251",
+              "koi8-r", "koi8-u", "cp866", "iso8859-5", "cp932", "euc_jp", "mac_roman"]
+_CYRILLIC = ("cp1251", "koi8-r", "koi8-u", "cp866", "iso8859-5")
+_GREEK_ODD = re.compile(r"(?<![^\W\d_])[¶’](?=[α-ωά-ώ])")  # Ά decoded with the other Greek codec: ¶ / ’ + letter
+# Signs of a wrong codec inside a word: two scripts mixed (Norwegian "på" as cp1251 "pе"), a symbol between letters
+# (Swedish "tänkte" as mac_roman "t‰nkte"), lower case followed by a Latin-1 capital ("lÂngsamt").
+_IN_WORD = re.compile(r"[A-Za-zÀ-ɏ][Ѐ-ӿͰ-Ͽ]|[Ѐ-ӿ][A-Za-zÀ-ɏͰ-Ͽ]|[Ͱ-Ͽ][A-Za-zÀ-ɏЀ-ӿ]|"
+                      r"(?<=[^\W\d_])[^\w\s'’‘\-‐·./&@](?=[^\W\d_])|[a-zß-ÿ][À-Þ]")
+_NOT_IN = {"cs": "ąĄľĽ"}  # Czech iso8859-2 read as cp1250: š ž -> ą ľ
 _BALTIC_CE = ("lv", "lt", "et", "pl", "cs", "sk", "hu", "ro", "hr", "sl", "tr")
 
 
@@ -109,6 +118,11 @@ def detect_legacy(data: bytes) -> str:
             odd += sum(1 for c in t if "Ā" <= c <= "ſ" and c not in "œŒ")
         if lang not in ("ja", "zh", "ko"):
             odd += sum(1 for c in t if "　" <= c <= "鿿")
+        if lang != "el":
+            odd += sum(1 for c in t if "Ͱ" <= c <= "Ͽ")  # Latin text read as cp1253 / iso8859-7
+        else:
+            odd += 10 * len(_GREEK_ODD.findall(t))  # one Ά per line or two: weigh it above the detector's guess
+        odd += len(_IN_WORD.findall(t)) + sum(t.count(c) for c in _NOT_IN.get(lang, ""))
         score -= 20 * odd / max(1, len(t))
         if enc == cn:
             score += 0.05 if cn in CANDIDATES else -0.05

@@ -59,6 +59,12 @@ See [Frontend](#frontend) below.
 - `reading_sessions(id, user_id, book_id, page_number, translation_toggle_clicks, session_date, UNIQUE(user_id, book_id, page_number, session_date))`
 
 Locales are stored as the UI sends them (`"french"`, `"english"`, …); `app/languages.py` maps to ISO codes.
+22 languages: ca cs da de el en es fi fr hu it ja lv nl no pl pt ro ru sv tr uk (`no` = Norwegian Bokmål).
+Adding one: `lib/languages.ts` + `app/languages.py`; per-language tables in `app/ingest/sentences.py`
+(abbreviations, ordinals), `ingest/formats/text.py` (function words), `ingest/levels.py` and
+`formats/pdf_structure.py` (chapter words), `formats/pdf_layout.py` (one-letter words), `ingest/ocr.py`
+(script), `ingest/encoding.py` (legacy codecs), `tts/text.py` (read-aloud abbreviations),
+`features/audio/browserSpeech.ts` (browser voice); a Piper voice in `tts/piper.py` is optional.
 
 ## Page data contract
 
@@ -246,7 +252,9 @@ Medium voices cost 0.10–0.15 CPU-seconds per second of audio with 2 threads.
 `PIPER_PRELOAD=all` downloads every configured voice in the background at startup (one-time, into the
 `piper-voices` volume); `POST /api/tts/prepare` (sent when the reader opens) downloads/loads the
 book's voice, and a synthesis request for a voice still downloading answers 503 while the client shows
-"Preparing voice… n%". **Japanese** has no server voice (`ja_JP-hi_fi_captain-medium` exists but needs
+"Preparing voice… n%". **ca cs da el fi hu nl no pl ro sv tr uk** have no Piper voice configured
+(Piper has voices for all of them, untested here; with `TTS_PROVIDER=xai` every language is spoken by Grok):
+the reader uses the browser's voice. **Japanese** has no server voice (`ja_JP-hi_fi_captain-medium` exists but needs
 pyopenjtalk + its dictionary); the client uses the browser's Web Speech voice and the player says so.
 ElevenLabs (`TTS_PROVIDER=elevenlabs` + key) uses the same interface via `/with-timestamps`
 (character alignment → word timings); only its response parsing is tested, not the live API.

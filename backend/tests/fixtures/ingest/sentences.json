@@ -490,5 +490,397 @@
 "本当に？"
 ]
 ]
+],
+"new_languages": [
+[
+"es",
+"El Sr. García vive en la Avda. de la Constitución. La Dra. López trabaja en el hospital desde finales del s. XX. Ángel es su hijo.",
+[
+"El Sr. García vive en la Avda. de la Constitución.",
+"La Dra. López trabaja en el hospital desde finales del s. XX.",
+"Ángel es su hijo."
+]
+],
+[
+"es",
+"—¿Vienes mañana? —preguntó Ana. —Sí, claro. Compraremos pan, leche, etc. Él traerá el vino.",
+[
+"—¿Vienes mañana? —preguntó Ana.",
+"—Sí, claro.",
+"Compraremos pan, leche, etc.",
+"Él traerá el vino."
+]
+],
+[
+"es",
+"¿Dónde está? ¡No lo sé! Lo explica el Prof. Ruiz en la pág. 12.",
+[
+"¿Dónde está?",
+"¡No lo sé!",
+"Lo explica el Prof. Ruiz en la pág. 12."
+]
+],
+[
+"it",
+"Il sig. Rossi abita a Milano. La dott.ssa Bianchi lavora in ospedale, cfr. Tabella 2. È molto brava.",
+[
+"Il sig. Rossi abita a Milano.",
+"La dott.ssa Bianchi lavora in ospedale, cfr. Tabella 2.",
+"È molto brava."
+]
+],
+[
+"it",
+"«Vieni domani?» chiese Marco. «Sì», rispose Anna. Abbiamo comprato pane, latte ecc. Poi siamo tornati a casa.",
+[
+"«Vieni domani?» chiese Marco.",
+"«Sì», rispose Anna.",
+"Abbiamo comprato pane, latte ecc.",
+"Poi siamo tornati a casa."
+]
+],
+[
+"it",
+"— Dove vai? — Al mercato. Il prof. Neri arriva domani, v. pag. 3.",
+[
+"— Dove vai?",
+"— Al mercato.",
+"Il prof. Neri arriva domani, v. pag. 3."
+]
+],
+[
+"ca",
+"El Sr. Puig viu a Girona. La seva germana, la Dra. Vila, treballa a l'hospital. Ha viscut a moltes ciutats, p. ex. Lleida i Vic.",
+[
+"El Sr. Puig viu a Girona.",
+"La seva germana, la Dra. Vila, treballa a l'hospital.",
+"Ha viscut a moltes ciutats, p. ex. Lleida i Vic."
+]
+],
+[
+"ca",
+"—On vas? —va preguntar la mare. —A casa. Hem comprat pa, llet, etc. Àngela ja ha arribat.",
+[
+"—On vas? —va preguntar la mare.",
+"—A casa.",
+"Hem comprat pa, llet, etc.",
+"Àngela ja ha arribat."
+]
+],
+[
+"ca",
+"«Vindràs demà?», em va preguntar. «Sí», li vaig respondre. Vegeu la pàg. 23.",
+[
+"«Vindràs demà?», em va preguntar.",
+"«Sí», li vaig respondre.",
+"Vegeu la pàg. 23."
+]
+],
+[
+"nl",
+"Dhr. Jansen woont in Utrecht. Hij heeft veel steden bezocht, bijv. Gent en Brugge. Zijn vrouw is dr. Bakker.",
+[
+"Dhr. Jansen woont in Utrecht.",
+"Hij heeft veel steden bezocht, bijv. Gent en Brugge.",
+"Zijn vrouw is dr. Bakker."
+]
+],
+[
+"nl",
+"‘Kom je ook?’ vroeg ze. ‘Ja, natuurlijk.’ Prof. De Vries knikte. Hij kocht appels, peren enz. Toen ging hij naar huis.",
+[
+"‘Kom je ook?’ vroeg ze.",
+"‘Ja, natuurlijk.’",
+"Prof. De Vries knikte.",
+"Hij kocht appels, peren enz.",
+"Toen ging hij naar huis."
+]
+],
+[
+"pl",
+"Prof. Nowak mieszka przy ul. Długiej w Gdańsku. Jego żona, dr Kowalska, pracuje w szpitalu. Ślub wzięli w 1998 r. w Krakowie.",
+[
+"Prof. Nowak mieszka przy ul. Długiej w Gdańsku.",
+"Jego żona, dr Kowalska, pracuje w szpitalu.",
+"Ślub wzięli w 1998 r. w Krakowie."
+]
+],
+[
+"pl",
+"— Dokąd idziesz? — zapytała matka. — Do szkoły. Wrócę o godz. 15.",
+[
+"— Dokąd idziesz? — zapytała matka.",
+"— Do szkoły.",
+"Wrócę o godz. 15."
+]
+],
+[
+"pl",
+"Napisał: „Nie wrócę już nigdy.” Zrobił to m.in. z powodu pieniędzy, długów itd. Żałował później.",
+[
+"Napisał: „Nie wrócę już nigdy.”",
+"Zrobił to m.in. z powodu pieniędzy, długów itd.",
+"Żałował później."
+]
+],
+[
+"uk",
+"Проф. Шевчук викладає у Києві. Його лекції, напр. про Сковороду, дуже популярні. Їх слухають сотні студентів.",
+[
+"Проф. Шевчук викладає у Києві.",
+"Його лекції, напр. про Сковороду, дуже популярні.",
+"Їх слухають сотні студентів."
+]
+],
+[
+"uk",
+"— Де ти був? — спитала мати. — У бібліотеці на вул. Франка. Ґанок там старий. Інші будинки нові.",
+[
+"— Де ти був? — спитала мати.",
+"— У бібліотеці на вул. Франка.",
+"Ґанок там старий.",
+"Інші будинки нові."
+]
+],
+[
+"uk",
+"Купили хліб, молоко, сир і т.д. Єдине, що забули, — це сіль. Див. с. 25.",
+[
+"Купили хліб, молоко, сир і т.д.",
+"Єдине, що забули, — це сіль.",
+"Див. с. 25."
+]
+],
+[
+"cs",
+"Prof. Novák se narodil 28. října 1950 v Brně. Řídil např. Ústav dějin umění. Ženil se dvakrát.",
+[
+"Prof. Novák se narodil 28. října 1950 v Brně.",
+"Řídil např. Ústav dějin umění.",
+"Ženil se dvakrát."
+]
+],
+[
+"cs",
+"„Kam jdeš?“ zeptala se. „Domů,“ odpověděl Petr. Koupil chleba, mléko atd. Šel pak spát.",
+[
+"„Kam jdeš?“ zeptala se.",
+"„Domů,“ odpověděl Petr.",
+"Koupil chleba, mléko atd.",
+"Šel pak spát."
+]
+],
+[
+"cs",
+"Za vlády Karla IV. Praha vzkvétala. Viz str. 12.",
+[
+"Za vlády Karla IV. Praha vzkvétala.",
+"Viz str. 12."
+]
+],
+[
+"sv",
+"Dr. Lindqvist bor i Uppsala. Hon har skrivit flera böcker, bl.a. Öarna i norr. Äntligen kom hösten.",
+[
+"Dr. Lindqvist bor i Uppsala.",
+"Hon har skrivit flera böcker, bl.a. Öarna i norr.",
+"Äntligen kom hösten."
+]
+],
+[
+"sv",
+"– Vart ska du? frågade han. – Till affären, sa hon. Vi behöver mjölk, bröd osv. Klockan var redan fem.",
+[
+"– Vart ska du? frågade han.",
+"– Till affären, sa hon.",
+"Vi behöver mjölk, bröd osv.",
+"Klockan var redan fem."
+]
+],
+[
+"sv",
+"”Jag kommer i morgon”, sa hon. Många kom, t.ex. Åsa och Erik. Mötet börjar kl. 9, se s. 14.",
+[
+"”Jag kommer i morgon”, sa hon.",
+"Många kom, t.ex. Åsa och Erik.",
+"Mötet börjar kl. 9, se s. 14."
+]
+],
+[
+"no",
+"Vi møttes 17. mai i Oslo. Det var mange folk der, bl.a. Øystein og Åse. Dr. Hansen holdt tale.",
+[
+"Vi møttes 17. mai i Oslo.",
+"Det var mange folk der, bl.a. Øystein og Åse.",
+"Dr. Hansen holdt tale."
+]
+],
+[
+"no",
+"«Hvor skal du?» spurte hun. «Hjem,» svarte han. Vi kjøpte epler, pærer o.l. Etterpå gikk vi hjem.",
+[
+"«Hvor skal du?» spurte hun.",
+"«Hjem,» svarte han.",
+"Vi kjøpte epler, pærer o.l.",
+"Etterpå gikk vi hjem."
+]
+],
+[
+"da",
+"Hr. Jensen bor i Aarhus. Han har arbejdet i mange firmaer, bl.a. Ørsted. Æbler kan han ikke lide.",
+[
+"Hr. Jensen bor i Aarhus.",
+"Han har arbejdet i mange firmaer, bl.a. Ørsted.",
+"Æbler kan han ikke lide."
+]
+],
+[
+"da",
+"»Kommer du i morgen?« spurgte hun. »Ja,« sagde han. Vi købte æg, mælk osv. Mødet er kl. 10, jf. s. 12.",
+[
+"»Kommer du i morgen?« spurgte hun.",
+"»Ja,« sagde han.",
+"Vi købte æg, mælk osv.",
+"Mødet er kl. 10, jf. s. 12."
+]
+],
+[
+"fi",
+"Tri Virtanen asuu Helsingissä. Hän on kirjoittanut useita kirjoja, esim. Äidin kirjeet. Ällistyttävää kyllä, ne myyvät hyvin.",
+[
+"Tri Virtanen asuu Helsingissä.",
+"Hän on kirjoittanut useita kirjoja, esim. Äidin kirjeet.",
+"Ällistyttävää kyllä, ne myyvät hyvin."
+]
+],
+[
+"fi",
+"– Tuletko huomenna? hän kysyi. – Tulen, vastasin. Ostimme maitoa, leipää jne. Kokous alkaa klo 9, ks. s. 4.",
+[
+"– Tuletko huomenna? hän kysyi.",
+"– Tulen, vastasin.",
+"Ostimme maitoa, leipää jne.",
+"Kokous alkaa klo 9, ks. s. 4."
+]
+],
+[
+"fi",
+"Suomi itsenäistyi 6. joulukuuta 1917. Luin 1. Mooseksen kirjan.",
+[
+"Suomi itsenäistyi 6. joulukuuta 1917.",
+"Luin 1. Mooseksen kirjan."
+]
+],
+[
+"ro",
+"Dl. Popescu locuiește pe str. Lipscani. Școala lui e aproape. Țara noastră e frumoasă.",
+[
+"Dl. Popescu locuiește pe str. Lipscani.",
+"Școala lui e aproape.",
+"Țara noastră e frumoasă."
+]
+],
+[
+"ro",
+"„Vii mâine?” a întrebat ea. „Da”, a răspuns el. Am cumpărat pâine, lapte etc. Apoi am plecat acasă.",
+[
+"„Vii mâine?” a întrebat ea.",
+"„Da”, a răspuns el.",
+"Am cumpărat pâine, lapte etc.",
+"Apoi am plecat acasă."
+]
+],
+[
+"ro",
+"Vezi de ex. cap. 3 din vol. II. Ștefan cel Mare a domnit în sec. XV.",
+[
+"Vezi de ex. cap. 3 din vol. II.",
+"Ștefan cel Mare a domnit în sec. XV."
+]
+],
+[
+"hu",
+"Dr. Kovács 1848. március 15-én született. Pl. Petőfi is ott volt. Ő is verset írt.",
+[
+"Dr. Kovács 1848. március 15-én született.",
+"Pl. Petőfi is ott volt.",
+"Ő is verset írt."
+]
+],
+[
+"hu",
+"„Hová mész?” – kérdezte anyám. „Haza” – feleltem. Vettünk kenyeret, tejet stb. Ezután hazamentünk.",
+[
+"„Hová mész?” – kérdezte anyám.",
+"„Haza” – feleltem.",
+"Vettünk kenyeret, tejet stb.",
+"Ezután hazamentünk."
+]
+],
+[
+"hu",
+"II. Rákóczi Ferenc 1676-ban született. Az ülés kb. 3 órán át tartott.",
+[
+"II. Rákóczi Ferenc 1676-ban született.",
+"Az ülés kb. 3 órán át tartott."
+]
+],
+[
+"tr",
+"Prof. Dr. Yılmaz İstanbul'da yaşıyor. Örneğin her sabah yürüyüş yapıyor. Şehri çok seviyor.",
+[
+"Prof. Dr. Yılmaz İstanbul'da yaşıyor.",
+"Örneğin her sabah yürüyüş yapıyor.",
+"Şehri çok seviyor."
+]
+],
+[
+"tr",
+"19. yüzyılda Osmanlı zayıfladı. 2. Dünya Savaşı 1939'da başladı. Ayrıntılar için bkz. s. 145.",
+[
+"19. yüzyılda Osmanlı zayıfladı.",
+"2. Dünya Savaşı 1939'da başladı.",
+"Ayrıntılar için bkz. s. 145."
+]
+],
+[
+"tr",
+"— Ne aldın? — Ekmek, peynir, zeytin vs. Kahvaltı için. “Yarın gelir misin?” diye sordu.",
+[
+"— Ne aldın?",
+"— Ekmek, peynir, zeytin vs.",
+"Kahvaltı için.",
+"“Yarın gelir misin?” diye sordu."
+]
+],
+[
+"el",
+"Πού πας; Στο σπίτι. Ο κ. Παπαδόπουλος μένει στην Αθήνα.",
+[
+"Πού πας;",
+"Στο σπίτι.",
+"Ο κ. Παπαδόπουλος μένει στην Αθήνα."
+]
+],
+[
+"el",
+"«Έρχεσαι αύριο;» ρώτησε η μητέρα. «Ναι», απάντησε. Ήταν ήδη αργά. Όλοι κοιμόντουσαν.",
+[
+"«Έρχεσαι αύριο;» ρώτησε η μητέρα.",
+"«Ναι», απάντησε.",
+"Ήταν ήδη αργά.",
+"Όλοι κοιμόντουσαν."
+]
+],
+[
+"el",
+"Αγόρασα ψωμί, γάλα, τυρί κλπ. Ήρθαν πολλοί, π.χ. Γιώργος και Μαρία. Τι ώρα είναι; Είναι έντεκα.",
+[
+"Αγόρασα ψωμί, γάλα, τυρί κλπ.",
+"Ήρθαν πολλοί, π.χ. Γιώργος και Μαρία.",
+"Τι ώρα είναι;",
+"Είναι έντεκα."
+]
+]
 ]
 }

@@ -8,6 +8,8 @@
 //   - L, "Line"                    -> line mode: only the current line shows its glosses; they follow ↑ / ↓
 //   - "Translation" (T)            -> natural translation after every paragraph (side by side on wide screens)
 //   - Enter                        -> natural translation of the current line's sentence
+//   - touch devices: a floating button where the thumb scrolls turns all glosses of the page on / off
+//     (ThumbToggle); there is no line mode
 // The gloss row is always reserved, so nothing moves when a gloss appears. Every lookup (not hiding)
 // counts as one "translation toggle click" for the Progress page (reading_sessions) and in the dock.
 // Pages are turned with the buttons. While read-aloud is active, tapping a sentence jumps playback there.
@@ -21,6 +23,8 @@ import { isShortcutEvent } from "@/lib/keys";
 import { buildReaderModel, type ReaderSentence } from "@/lib/readingModel";
 import { cn } from "@/lib/utils";
 import { ReadAloudBar, useReadAloud, wordToGroup, type AudioSegment } from "@/features/audio";
+import { useCoarsePointer } from "@/hooks/useCoarsePointer";
+import { ThumbToggle } from "@/components/ThumbToggle";
 
 const PREFS_KEY = "lexmatches:reader:v2"; // v2: glosses are off by default (the reader looks words up)
 interface Prefs {
@@ -112,6 +116,8 @@ const ReadingView = ({
   const [clickCount, setClickCount] = useState(0);
   const glossesOn = prefs.glosses && model.hasGlosses;
   const translationsOn = prefs.translations && model.hasTranslations;
+  // Phones / tablets: whole-page glosses from a floating thumb button; no line mode (it is keyboard-driven).
+  const touch = useCoarsePointer() && !demo;
 
   const updatePrefs = useCallback((patch: Partial<Prefs>) => {
     setPrefs((prev) => {
@@ -207,7 +213,7 @@ const ReadingView = ({
   // transition). Its position is measured, so it is re-done whenever the layout can change.
   const [dotTop, setDotTop] = useState<number | null>(null);
   // Line mode: the tokens of the current line; their glosses are shown, nothing else is.
-  const lineOn = prefs.line && model.hasGlosses && !glossesOn;
+  const lineOn = prefs.line && model.hasGlosses && !glossesOn && !touch;
   const [lineKeys, setLineKeys] = useState<Set<string>>(new Set());
   // ← / → in line mode: the line's glosses off (read unaided, keep moving) and on again when needed.
   const [lineHelp, setLineHelp] = useState(true);
@@ -605,7 +611,7 @@ const ReadingView = ({
         <HelpToggle pressed={glossesOn} onClick={toggleGlosses} label="Glosses" tip={demo ? "Show all glosses" : "Show all glosses (G)"} icon={<WholeWord />}
           tourId="glosses" />
       )}
-      {model.hasGlosses && !demo && (
+      {model.hasGlosses && !demo && !touch && (
         <HelpToggle pressed={lineOn} onClick={toggleLine} label="Line" tip="Glosses for the line you are on only; move with ↑ ↓, hide or show with ← → (L)" icon={<Rows3 />}
           tourId="line" />
       )}
@@ -729,6 +735,17 @@ const ReadingView = ({
       </div>
 
       {tour && <TourOverlay tour={tour} spot={spot} onInput={tourInput} onStop={stopTour} />}
+
+      {touch && !tour && (model.hasGlosses || model.hasTranslations) && (
+        // whole-page glosses (word by word under the text); a page without glosses: its sentence translations
+        <ThumbToggle
+          pressed={model.hasGlosses ? glossesOn : translationsOn}
+          onToggle={model.hasGlosses ? toggleGlosses : toggleTranslations}
+          label="Translations"
+          top={HEADER_PX + 8}
+          bottom={DOCK_PX + 8}
+        />
+      )}
 
       {!demo && (toggles || player) && (
         <div

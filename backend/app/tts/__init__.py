@@ -126,7 +126,7 @@ def plan(text: str, language: str | None, *, user_id, scope: str = "misc", voice
     units = spoken_units(text, lang)
     if not any(speakable(u) for u in units):
         raise ValueError("Nothing to read aloud in this text")
-    variant = f"{settings.piper_length_scale}" if prov.name == "piper" else ""
+    variant = f"{settings.piper_length_scale}/n1" if prov.name == "piper" else ""  # n1: noise caps (piper.py)
     digest = hashlib.sha256(
         "\x00".join([FORMAT_VERSION, prov.name, voice_id, variant, lang, "\x1f".join(units)]).encode()
     ).hexdigest()

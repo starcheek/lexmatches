@@ -140,7 +140,7 @@ const Index = () => {
           <p className="mx-4 mb-3 text-center text-sm font-medium text-primary">
             Try it: pick a language, then click a phrase you don't know, or point at the text and use the arrow keys.
           </p>
-          <div className="mx-4 mb-4 flex flex-wrap justify-center gap-2 sm:mx-auto sm:max-w-3xl" role="group" aria-label="Demo language pair" data-testid="demo-pairs">
+          <div className="mx-4 mb-4 grid grid-cols-2 gap-2 sm:mx-auto sm:max-w-3xl sm:grid-cols-4" role="group" aria-label="Demo language pair" data-testid="demo-pairs">
             {DEMO_SAMPLES.map((s) => (
               <button
                 key={s.id}
@@ -173,7 +173,7 @@ const Index = () => {
             />
           </div>
           <p className="mx-4 mt-3 text-center text-xs text-muted-foreground">
-            {sample.id === DEMO_SAMPLES[0].id ? "Abridged from" : "Abridged and translated from"} Jules Verne,{" "}
+            {sample.locale === "french" ? "Abridged from" : "Abridged and translated from"} Jules Verne,{" "}
             <i>Le Tour du monde en quatre-vingts jours</i> (1872), public domain.
           </p>
         </section>

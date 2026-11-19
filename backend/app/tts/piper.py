@@ -45,6 +45,11 @@ DEFAULT_VOICES = {
 }
 
 SENTENCE_PAUSE_S = 0.25
+# Piper synthesizes sentence by sentence, each with fresh random noise: with a voice's own high settings
+# (lessac, irina, aivars: 0.667 / 0.8) timbre and rhythm audibly differ from one sentence to the next.
+# Capped at what the steadier voices ship with (siwis, thorsten, cadu, davefx: 0.5 / 0.333).
+NOISE_SCALE_MAX = 0.5
+NOISE_W_MAX = 0.333
 # Not phones: sentence markers, word gaps, punctuation (pauses) and stress marks.
 _SKIP = set("^$ .,;:!?¡¿—–-…\"«»()[]ˈˌ")
 _MAX_LOADED = 3
@@ -257,7 +262,11 @@ class PiperProvider:
         v = self._voice(voice)
         rate = v.config.sample_rate
         pause = np.zeros(int(rate * SENTENCE_PAUSE_S), dtype=np.int16)
-        cfg = SynthesisConfig(length_scale=settings.piper_length_scale)
+        cfg = SynthesisConfig(
+            length_scale=settings.piper_length_scale,
+            noise_scale=min(v.config.noise_scale, NOISE_SCALE_MAX),
+            noise_w_scale=min(v.config.noise_w_scale, NOISE_W_MAX),
+        )
 
         pcm: list[np.ndarray] = []
         actual: list[tuple[str, int, int]] = []

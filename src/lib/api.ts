@@ -210,7 +210,7 @@ export const api = {
   /** A web page: fetched, cleaned (navigation, ads, comments removed) and split into pages by the server. */
   importUrl: (url: string, title: string, originalLocale: string, targetLocale: string) =>
     send<Book>("POST", "/books/import", { url, title: title || null, original_locale: originalLocale, target_locale: targetLocale }),
-  updateBook: (id: string, patch: { last_read_page?: number; title?: string }) => send<Book>("PATCH", `/books/${id}`, patch),
+  updateBook: (id: string, patch: { last_read_page?: number; title?: string; target_locale?: string }) => send<Book>("PATCH", `/books/${id}`, patch),
   deleteBook: (id: string) => request(`/books/${id}`, { method: "DELETE" }),
   async getPdfBlob(id: string) {
     return (await request(`/books/${id}/pdf`)).blob();

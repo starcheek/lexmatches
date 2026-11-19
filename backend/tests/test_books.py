@@ -85,3 +85,23 @@ def test_delete_book(client, pdf_book):
     h = user["headers"]
     assert client.delete(f"/api/books/{book['id']}", headers=h).status_code == 204
     assert client.get(f"/api/books/{book['id']}", headers=h).status_code == 404
+
+
+def test_change_target_language(client, pdf_book):
+    user, book = pdf_book
+    h = user["headers"]
+    url = f"/api/books/{book['id']}"
+    first = client.get(f"{url}/pages", headers=h).json()[0]
+    client.post(f"/api/pages/{first['id']}/translate", headers=h)
+    english = wait_for(lambda: (p := client.get(f"/api/pages/{first['id']}", headers=h).json())["status"] == "completed" and p)
+
+    assert client.patch(url, headers=h, json={"target_locale": "klingon"}).status_code == 400
+    assert client.patch(url, headers=h, json={"target_locale": "German"}).json()["target_locale"] == "german"
+    page = client.get(f"/api/pages/{first['id']}", headers=h).json()
+    assert page["status"] == "pending" and page["translated_data"] is None
+    assert client.get(f"{url}/stats", headers=h).json() == {"translated": 0, "total": 2}
+
+    # back to English: the earlier translation returns, nothing is translated again
+    assert client.patch(url, headers=h, json={"target_locale": "english"}).json()["target_locale"] == "english"
+    page = client.get(f"/api/pages/{first['id']}", headers=h).json()
+    assert page["status"] == "completed" and page["translated_data"] == english["translated_data"]

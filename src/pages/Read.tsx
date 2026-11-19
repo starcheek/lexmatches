@@ -7,12 +7,12 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError, isLoggedIn, type Page } from "@/lib/api";
-import { languageLabel } from "@/lib/languages";
+import { LANGUAGES, languageLabel } from "@/lib/languages";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
-  DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup,
+  DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import ReadingView from "@/components/ReadingView";
@@ -127,6 +127,25 @@ const Read = () => {
   useEffect(() => {
     if (windowStatuses) void queryClient.invalidateQueries({ queryKey: ["stats", bookId] });
   }, [windowStatuses, bookId, queryClient]);
+
+  // ---- Target language: can be changed at any point of the book. What was translated before is kept on the
+  // server and comes back when the reader returns to that language; other pages are translated when opened.
+  const changeTarget = useCallback(
+    async (locale: string) => {
+      try {
+        const updated = await api.updateBook(bookId, { target_locale: locale });
+        queryClient.setQueryData(["book", bookId], updated);
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["pages", bookId] }),
+          queryClient.invalidateQueries({ queryKey: ["stats", bookId] }),
+        ]);
+        toast.success(`Now translating into ${languageLabel(locale)}`);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Could not change the language");
+      }
+    },
+    [bookId, queryClient],
+  );
 
   // ---- Translation: POST starts a background job; the window query polls its progress ----
   const startTranslation = useCallback(
@@ -335,6 +354,20 @@ const Read = () => {
                   <Languages /> Translate the next {batchSize} pages
                 </DropdownMenuItem>
               )}
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger data-testid="target-language">
+                  <Languages className="mr-2 h-4 w-4" /> Translate into: {languageLabel(book.target_locale)}
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="max-h-72 overflow-y-auto">
+                  <DropdownMenuRadioGroup value={book.target_locale} onValueChange={(v) => void changeTarget(v)}>
+                    {LANGUAGES.filter((l) => l.value !== book.original_locale).map((l) => (
+                      <DropdownMenuRadioItem key={l.value} value={l.value}>
+                        {l.label}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
               <DropdownMenuItem onSelect={() => void exportPages()} disabled={exporting}>
                 <FileDown /> Export translated pages
               </DropdownMenuItem>

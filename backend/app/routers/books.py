@@ -11,7 +11,7 @@ from app.config import settings
 from app.ingest import MAX_TEXT_CHARS, Document, IngestError, apply_overrides, build_units, ingest_file, ingest_text
 from app.ingest.fetch import fetch
 from app.ingest.pipeline import precheck
-from app.languages import to_iso
+from app.languages import NAME_TO_ISO, to_iso
 from app.routers.common import BOOK_FIELDS, PAGE_FIELDS, book_out, owned_book, page_out
 from app.services.export import render_export
 from app.services.processing import create_uploaded_book, store_document
@@ -162,12 +162,47 @@ def get_book(book_id: UUID, user: dict = Depends(auth.current_user)):
 class BookPatch(BaseModel):
     last_read_page: int | None = Field(default=None, ge=1)
     title: str | None = Field(default=None, min_length=1, max_length=200)
+    target_locale: str | None = Field(default=None, max_length=40)
+
+
+def _change_target(book: dict, new: str) -> None:
+    """Read the book in another language from here on. Each page's translation into the language being left is
+    put aside (pages.translations_cache) and the one made earlier into the new language, if any, comes back;
+    the glossary likewise. Pages without one are translated when they are next opened."""
+    old = book["target_locale"]
+    if new not in NAME_TO_ISO:
+        raise HTTPException(400, "Unsupported language")
+    if new == old:
+        return
+    if db.fetch_one("SELECT 1 AS x FROM pages WHERE book_id = %s AND status = 'processing' LIMIT 1", (book["id"],)):
+        raise HTTPException(409, "A page is being translated. Change the language when it has finished.")
+    with db.connection() as conn:
+        conn.execute(
+            "UPDATE pages SET"
+            "  translations_cache = (translations_cache - %(new)s) || CASE WHEN translated_data IS NULL THEN '{}'::jsonb"
+            "    ELSE jsonb_build_object(%(old)s::text, jsonb_build_object('data', translated_data, 'status', status)) END,"
+            "  translated_data = translations_cache -> %(new)s -> 'data',"
+            "  status = COALESCE(translations_cache -> %(new)s ->> 'status', 'pending'),"
+            "  error = NULL"
+            " WHERE book_id = %(book)s",
+            {"new": new, "old": old, "book": book["id"]},
+        )
+        conn.execute(
+            "UPDATE books SET"
+            "  glossary_cache = (glossary_cache - %(new)s) || jsonb_build_object(%(old)s::text, glossary),"
+            "  glossary = COALESCE(glossary_cache -> %(new)s, '{}'::jsonb),"
+            "  target_locale = %(new)s"
+            " WHERE id = %(book)s",
+            {"new": new, "old": old, "book": book["id"]},
+        )
 
 
 @router.patch("/{book_id}")
 def update_book(book_id: UUID, body: BookPatch, user: dict = Depends(auth.current_user)):
-    owned_book(book_id, user)
-    changes = body.model_dump(exclude_none=True)
+    book = owned_book(book_id, user)
+    if body.target_locale is not None:
+        _change_target(book, body.target_locale.strip().lower())
+    changes = body.model_dump(exclude_none=True, exclude={"target_locale"})
     if changes:
         sets = ", ".join(f"{k} = %s" for k in changes)
         db.execute(f"UPDATE books SET {sets} WHERE id = %s", (*changes.values(), book_id))

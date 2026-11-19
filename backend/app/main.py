@@ -3,13 +3,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app import db, errorlog, jobs, storage
+from app import db, errorlog, jobs, serverlog, storage
 from app import tts as tts_service
 from app.config import settings
 from app.routers import admin, analytics, auth, billing, books, pages, progress, tts
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("app")
+serverlog.install()  # the newest log lines, for the /admin page
 
 
 @asynccontextmanager

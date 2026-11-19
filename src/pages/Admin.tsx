@@ -1,5 +1,6 @@
-// Owner page: test accounts and the sign-up switch. Opened as /admin#<ADMIN_TOKEN>; the token is moved from
-// the address bar into sessionStorage (a URL fragment is never sent to the server or to Cloudflare).
+// Owner page, in sections: accounts (test accounts, the sign-up switch), every account's books (and sharing
+// them), problems, the server log. Opened as /admin#<ADMIN_TOKEN>; the token is moved from the address bar
+// into sessionStorage (a URL fragment is never sent to the server or to Cloudflare).
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Copy, KeyRound, Loader2, RefreshCw, Trash2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
@@ -7,24 +8,29 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import BooksSection from "./admin/BooksSection";
+import LogsSection from "./admin/LogsSection";
+import { call, when, type AdminBook, type AdminUser, type ServerRequest } from "./admin/shared";
 
 const TOKEN_KEY = "lexmatches:admin";
+const TAB_KEY = "lexmatches:admin-tab";
+const TABS = ["accounts", "books", "problems", "logs"] as const;
+type Tab = (typeof TABS)[number];
 
-interface AdminUser {
-  id: string;
-  email: string;
-  created_at: string;
-  books: number;
-  translated_pages: number;
-  sessions: number;
-  last_seen: string | null;
-  last_ip: string | null;
-}
+const storedTab = (): Tab => {
+  try {
+    const t = sessionStorage.getItem(TAB_KEY) as Tab | null;
+    return t && TABS.includes(t) ? t : "accounts";
+  } catch {
+    return "accounts";
+  }
+};
 
 interface Problems {
   days: number;
   groups: { source: "page" | "server"; kind: string; what: string; times: number; sessions: number; users: number; last: string }[];
-  server: { ts: string; method: string; path: string; status: number | null; duration_ms: number | null; detail: string | null; traceback: string | null; ip: string | null; email: string | null }[];
+  server: ServerRequest[];
   page: { ts: string; type: string; path: string; name: string | null; data: Record<string, unknown> | null; email: string | null }[];
   failed: { ts: string; kind: "book" | "page"; title: string; page_number: number | null; error: string | null; email: string }[];
   dead_clicks: { page: string; tag: string | null; times: number; sessions: number }[];
@@ -60,28 +66,6 @@ const readToken = (): string => {
   }
 };
 
-async function call<T>(token: string, method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`/api/admin${path}`, {
-    method,
-    headers: { Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const detail = await res.json().then((b) => b?.detail).catch(() => null);
-    throw new Error(
-      res.status === 404 && path === "/settings"
-        ? "The admin area is off: set ADMIN_TOKEN on the server."
-        : typeof detail === "string"
-          ? detail
-          : `Request failed (${res.status})`,
-    );
-  }
-  return res.status === 204 ? (undefined as T) : res.json();
-}
-
-const when = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "never";
-
 const Admin = () => {
   const [token, setToken] = useState(readToken);
   const [draft, setDraft] = useState("");
@@ -92,6 +76,17 @@ const Admin = () => {
   const [issued, setIssued] = useState<Issued | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [problems, setProblems] = useState<Problems | null>(null);
+  const [books, setBooks] = useState<AdminBook[]>([]);
+  const [bookOwner, setBookOwner] = useState(""); // Books section: one account's books, or all
+  const [tab, setTab] = useState<Tab>(storedTab);
+  const openTab = (next: Tab) => {
+    setTab(next);
+    try {
+      sessionStorage.setItem(TAB_KEY, next);
+    } catch {
+      /* not remembered */
+    }
+  };
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -99,6 +94,7 @@ const Admin = () => {
       const s = await call<{ signup_open: boolean }>(token, "GET", "/settings");
       setSignupOpen(s.signup_open);
       setUsers(await call<AdminUser[]>(token, "GET", "/users"));
+      setBooks(await call<AdminBook[]>(token, "GET", "/books"));
       setProblems(await call<Problems>(token, "GET", "/problems?days=7"));
       setError(null);
     } catch (e) {
@@ -174,6 +170,89 @@ const Admin = () => {
     );
   }
 
+  const problemCount = problems ? problems.groups.reduce((n, g) => n + g.times, 0) + problems.failed.length : 0;
+
+  const accounts = (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Accounts ({users.length})</CardTitle>
+          <CardDescription>Translated pages are what costs money (about $0.07 each).</CardDescription>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="text-muted-foreground">
+              <tr>
+                <th className="py-2 pr-4 font-medium">Email</th>
+                <th className="py-2 pr-4 font-medium">Created</th>
+                <th className="py-2 pr-4 text-right font-medium">Books</th>
+                <th className="py-2 pr-4 text-right font-medium">Translated pages</th>
+                <th className="py-2 pr-4 text-right font-medium">Sessions</th>
+                <th className="py-2 pr-4 font-medium">Last seen</th>
+                <th className="py-2 pr-4 font-medium">Last IP</th>
+                <th className="py-2 font-medium" />
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u) => (
+                <tr key={u.id} className="border-t">
+                  <td className="py-2 pr-4 font-medium">{u.email}</td>
+                  <td className="py-2 pr-4 whitespace-nowrap">{when(u.created_at)}</td>
+                  <td className="py-2 pr-4 text-right tabular-nums">
+                    <button
+                      type="button"
+                      className="text-accent hover:underline"
+                      aria-label={`Books of ${u.email}`}
+                      onClick={() => {
+                        setBookOwner(u.id);
+                        openTab("books");
+                      }}
+                    >
+                      {u.books}
+                    </button>
+                  </td>
+                  <td className="py-2 pr-4 text-right tabular-nums">{u.translated_pages}</td>
+                  <td className="py-2 pr-4 text-right tabular-nums">{u.sessions}</td>
+                  <td className="py-2 pr-4 whitespace-nowrap">{when(u.last_seen)}</td>
+                  <td className="py-2 pr-4">{u.last_ip ?? "–"}</td>
+                  <td className="py-2 whitespace-nowrap text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`New password for ${u.email}`}
+                      title="New password"
+                      onClick={() =>
+                        void run(async () => {
+                          const chosen = window.prompt(`New password for ${u.email} (6+ characters), or leave empty to generate an easy one:`, "");
+                          if (chosen === null) return; // cancelled
+                          const r = await call<{ password: string }>(token, "POST", `/users/${u.id}/password`, { password: chosen.trim() || null });
+                          setIssued({ email: u.email, password: r.password });
+                        })
+                      }
+                    >
+                      <KeyRound />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Delete ${u.email}`}
+                      title="Delete account"
+                      onClick={() => {
+                        if (window.confirm(`Delete ${u.email} with all their books and progress? This cannot be undone.`)) {
+                          void run(() => call<void>(token, "DELETE", `/users/${u.id}`));
+                        }
+                      }}
+                    >
+                      <Trash2 />
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+  );
+
   return (
     <main className="container mx-auto max-w-5xl space-y-6 px-4 py-8">
       <div className="flex items-center justify-between">
@@ -183,6 +262,15 @@ const Admin = () => {
         </Button>
       </div>
 
+      <Tabs value={tab} onValueChange={(v) => openTab(v as Tab)} className="space-y-6">
+        <TabsList className="h-auto flex-wrap justify-start">
+          <TabsTrigger value="accounts">Accounts ({users.length})</TabsTrigger>
+          <TabsTrigger value="books">Books ({books.length})</TabsTrigger>
+          <TabsTrigger value="problems">Problems{problemCount > 0 && ` (${problemCount})`}</TabsTrigger>
+          <TabsTrigger value="logs">Server logs</TabsTrigger>
+        </TabsList>
+
+      <TabsContent value="accounts" className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Public sign-up</CardTitle>
@@ -248,6 +336,14 @@ const Admin = () => {
         </CardContent>
       </Card>
 
+      {accounts}
+      </TabsContent>
+
+      <TabsContent value="books">
+        <BooksSection token={token} books={books} users={users} owner={bookOwner} onOwner={setBookOwner} onChanged={load} />
+      </TabsContent>
+
+      <TabsContent value="problems">
       {problems && (
         <Card data-testid="problems">
           <CardHeader>
@@ -302,25 +398,12 @@ const Admin = () => {
             )}
 
             {problems.server.length > 0 && (
-              <details>
-                <summary className="cursor-pointer font-medium">Server log, newest {problems.server.length}</summary>
-                <ul className="mt-2 space-y-1">
-                  {problems.server.map((s, i) => (
-                    <li key={i} className="border-t pt-1">
-                      {when(s.ts)} · {s.email ?? "signed out"} · {s.ip ?? "–"} ·{" "}
-                      <span className="font-medium">{s.status ?? ""} {s.method} {s.path}</span>
-                      {s.duration_ms !== null && ` · ${s.duration_ms} ms`}
-                      {s.detail && <div className="break-words text-muted-foreground">{s.detail}</div>}
-                      {s.traceback && (
-                        <details>
-                          <summary className="cursor-pointer text-muted-foreground">Traceback</summary>
-                          <pre className="overflow-x-auto whitespace-pre-wrap text-xs">{s.traceback}</pre>
-                        </details>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </details>
+              <p>
+                <button type="button" className="font-medium text-accent hover:underline" onClick={() => openTab("logs")}>
+                  {problems.server.length} failed requests in full
+                </button>{" "}
+                are under Server logs.
+              </p>
             )}
 
             {problems.page.length > 0 && (
@@ -353,75 +436,15 @@ const Admin = () => {
           </CardContent>
         </Card>
       )}
+      </TabsContent>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Accounts ({users.length})</CardTitle>
-          <CardDescription>Translated pages are what costs money (about $0.07 each).</CardDescription>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="py-2 pr-4 font-medium">Email</th>
-                <th className="py-2 pr-4 font-medium">Created</th>
-                <th className="py-2 pr-4 text-right font-medium">Books</th>
-                <th className="py-2 pr-4 text-right font-medium">Translated pages</th>
-                <th className="py-2 pr-4 text-right font-medium">Sessions</th>
-                <th className="py-2 pr-4 font-medium">Last seen</th>
-                <th className="py-2 pr-4 font-medium">Last IP</th>
-                <th className="py-2 font-medium" />
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <tr key={u.id} className="border-t">
-                  <td className="py-2 pr-4 font-medium">{u.email}</td>
-                  <td className="py-2 pr-4 whitespace-nowrap">{when(u.created_at)}</td>
-                  <td className="py-2 pr-4 text-right tabular-nums">{u.books}</td>
-                  <td className="py-2 pr-4 text-right tabular-nums">{u.translated_pages}</td>
-                  <td className="py-2 pr-4 text-right tabular-nums">{u.sessions}</td>
-                  <td className="py-2 pr-4 whitespace-nowrap">{when(u.last_seen)}</td>
-                  <td className="py-2 pr-4">{u.last_ip ?? "–"}</td>
-                  <td className="py-2 whitespace-nowrap text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label={`New password for ${u.email}`}
-                      title="New password"
-                      onClick={() =>
-                        void run(async () => {
-                          const chosen = window.prompt(`New password for ${u.email} (6+ characters), or leave empty to generate an easy one:`, "");
-                          if (chosen === null) return; // cancelled
-                          const r = await call<{ password: string }>(token, "POST", `/users/${u.id}/password`, { password: chosen.trim() || null });
-                          setIssued({ email: u.email, password: r.password });
-                        })
-                      }
-                    >
-                      <KeyRound />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label={`Delete ${u.email}`}
-                      title="Delete account"
-                      onClick={() => {
-                        if (window.confirm(`Delete ${u.email} with all their books and progress? This cannot be undone.`)) {
-                          void run(() => call<void>(token, "DELETE", `/users/${u.id}`));
-                        }
-                      }}
-                    >
-                      <Trash2 />
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
+      <TabsContent value="logs">
+        <LogsSection token={token} failed={problems?.server ?? []} />
+      </TabsContent>
+      </Tabs>
     </main>
   );
 };
 
 export default Admin;
+

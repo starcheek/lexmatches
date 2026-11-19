@@ -1,4 +1,6 @@
-"""Owner tools behind the ADMIN_TOKEN bearer token (the /admin page): test accounts and the sign-up switch."""
+"""Owner tools behind the ADMIN_TOKEN bearer token (the /admin page): accounts and the sign-up switch, every
+account's books (and sharing them), the server log."""
+import logging
 import secrets
 from uuid import UUID
 
@@ -6,10 +8,12 @@ import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
-from app import auth, db, seed, storage
+from app import auth, db, seed, serverlog, storage
 from app.config import settings
 from app.routers.analytics import admin
 from app.routers.auth import Credentials
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"], dependencies=[Depends(admin)])
 
@@ -109,6 +113,81 @@ def delete_user(user_id: UUID):
     except Exception:
         pass  # the account is gone; orphaned files are unreachable (keys are per user)
     return Response(status_code=204)
+
+
+@router.get("/books")
+def books():
+    """Every book with its owner and how much of it is translated (`translated`: the page numbers)."""
+    return db.fetch_all(
+        "SELECT b.id, b.user_id, u.email, b.title, b.author, b.original_locale, b.target_locale, b.status, b.error,"
+        "  b.source_format, b.total_pages, b.last_read_page, b.created_at,"
+        "  COALESCE(t.translated, '{}') AS translated, COALESCE(t.partial, 0) AS partial_pages"
+        " FROM books b JOIN users u ON u.id = b.user_id"
+        " LEFT JOIN LATERAL ("
+        "   SELECT array_agg(p.page_number ORDER BY p.page_number)"
+        "            FILTER (WHERE p.status = 'completed' AND p.translated_data IS NOT NULL) AS translated,"
+        "          count(*) FILTER (WHERE p.status <> 'completed' AND p.translated_data IS NOT NULL) AS partial"
+        "   FROM pages p WHERE p.book_id = b.id) t ON true"
+        " ORDER BY b.created_at DESC"
+    )
+
+
+class Share(BaseModel):
+    user_ids: list[UUID]
+
+
+_BOOK_COPY = ("title, original_locale, target_locale, source, status, error, total_pages, glossary, source_format,"
+              " author, detected_language, warnings, ingest")
+_PAGE_COPY = ("page_number, original_text, blocks, translated_data, images, error, source_page_start,"
+              " source_page_end, chapter_title")
+
+
+@router.post("/books/{book_id}/share", status_code=201)
+def share_book(book_id: UUID, body: Share):
+    """Give other accounts their own copy of a book, with every translation made so far (nothing is translated
+    or paid for again). Copies are independent: later translations and reading progress stay with each account."""
+    book = db.fetch_one("SELECT id, user_id, status, source_format FROM books WHERE id = %s", (book_id,))
+    if book is None:
+        raise HTTPException(404, "Book not found")
+    if book["status"] != "completed":
+        raise HTTPException(409, "This book is not ready (still being processed, or it failed)")
+    targets = list(dict.fromkeys(body.user_ids))
+    if not targets:
+        raise HTTPException(400, "Choose at least one account")
+    found = db.fetch_all("SELECT id FROM users WHERE id = ANY(%s)", (targets,))
+    if len(found) != len(targets):
+        raise HTTPException(404, "User not found")
+    copies = []
+    for user_id in targets:
+        with db.connection() as conn:
+            new_id = conn.execute(
+                f"INSERT INTO books (user_id, {_BOOK_COPY}) SELECT %s, {_BOOK_COPY} FROM books WHERE id = %s RETURNING id",
+                (user_id, book_id),
+            ).fetchone()["id"]
+            # a page caught mid-translation has no job in the copy: it continues from what is stored when opened
+            conn.execute(
+                f"INSERT INTO pages (book_id, status, {_PAGE_COPY})"
+                f" SELECT %s, CASE WHEN status = 'processing' THEN 'pending' ELSE status END, {_PAGE_COPY}"
+                " FROM pages WHERE book_id = %s",
+                (new_id, book_id),
+            )
+        try:  # the uploaded original (the PDF view needs it); pasted and imported texts have none
+            source = storage.book_file_key(book["user_id"], book_id, book["source_format"])
+            if storage.exists(source):
+                storage.client().copy_object(
+                    Bucket=settings.s3_bucket, Key=storage.book_file_key(user_id, new_id, book["source_format"]),
+                    CopySource={"Bucket": settings.s3_bucket, "Key": source})
+        except Exception:
+            log.exception("could not copy the source file of book %s for user %s", book_id, user_id)
+        copies.append({"user_id": str(user_id), "book_id": str(new_id)})
+    return {"copies": copies}
+
+
+@router.get("/logs")
+def logs(limit: int = 500, level: str = "INFO", q: str | None = None, after: int = 0):
+    """The server's newest log lines (kept in memory since the last restart), oldest first."""
+    return {"started": serverlog.STARTED.isoformat(), "kept": serverlog.MAX_RECORDS,
+            "lines": serverlog.read(limit, level, q, after)}
 
 
 @router.get("/settings")

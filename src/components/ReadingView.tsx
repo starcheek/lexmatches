@@ -152,9 +152,11 @@ const ReadingView = ({
   }, [glossesOn, translationsOn, sizeIndex]);
 
   // Only asking for help counts as a lookup, not hiding it again.
+  // Glosses (whole page) and Line are two separate modes: choosing one leaves the other, so hiding the
+  // page's glosses again (← / →) never falls back to line mode.
   const toggleGlosses = useCallback(() => {
     holdPosition();
-    updatePrefs({ glosses: !prefs.glosses });
+    updatePrefs({ glosses: !prefs.glosses, line: false });
     if (!prefs.glosses) countHelp();
   }, [prefs.glosses, updatePrefs, countHelp, holdPosition]);
   const toggleTranslations = useCallback(() => {
@@ -222,15 +224,17 @@ const ReadingView = ({
     setLineHelp(!lineHelp);
   }, [lineHelp, countHelp]);
   const toggleLine = useCallback(() => {
-    updatePrefs({ line: !prefs.line });
+    const on = !lineOn; // with the page's glosses showing, "Line" switches to line mode
+    if (glossesOn) holdPosition();
+    updatePrefs({ line: on, glosses: false });
     setLineHelp(true);
-    if (prefs.line) return;
+    if (!on) return;
     countHelp(); // turning the help on is one lookup; following the text line by line is not counted again
     if (!cursor) {
       const first = currentToken(tokens());
       if (first) setCursor(first.dataset.tok!);
     }
-  }, [prefs.line, updatePrefs, countHelp, cursor, currentToken, tokens]);
+  }, [lineOn, glossesOn, updatePrefs, holdPosition, countHelp, cursor, currentToken, tokens]);
   const [viewport, setViewport] = useState(0);
   useEffect(() => {
     const onResize = () => setViewport(window.innerWidth);

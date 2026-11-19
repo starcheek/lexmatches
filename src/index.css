@@ -143,6 +143,8 @@ All colors MUST be HSL.
     overflow-wrap: break-word;
     -webkit-hyphens: auto;
     hyphens: auto;
+    /* side-by-side translations depend on the room the text really has, not on the window */
+    container: reader / inline-size;
   }
   @media (min-width: 640px) {
     .reading-text { font-size: calc(1.3125rem * var(--reader-scale, 1)); } /* 21px */
@@ -266,7 +268,7 @@ All colors MUST be HSL.
     -webkit-hyphens: none;
     hyphens: none;
   }
-  @media (min-width: 1280px) {
+  @container reader (min-width: 72rem) {
     .reading-text[data-translations] .para {
       display: grid;
       grid-template-columns: minmax(0, var(--reader-col)) minmax(0, 1fr);

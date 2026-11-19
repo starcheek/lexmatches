@@ -25,6 +25,15 @@ NAME_TO_ISO = {
     "catalan": "ca",
 }
 ISO_TO_NAME = {v: k for k, v in NAME_TO_ISO.items()}
+# Regional variants: one ISO code (same ingest rules), their own name for the translator and their own voice.
+# "portuguese" is the European one; a bare "pt" stays unspecified.
+NAME_TO_ISO["brazilian portuguese"] = "pt"
+_VARIANTS = {
+    "portuguese": ("pt-PT", "European Portuguese"),
+    "pt-pt": ("pt-PT", "European Portuguese"),
+    "brazilian portuguese": ("pt-BR", "Brazilian Portuguese"),
+    "pt-br": ("pt-BR", "Brazilian Portuguese"),
+}
 # Other spellings of a supported language (BCP-47 / local names) -> its code here.
 _ALIASES = {"nb": "no", "nn": "no", "nob": "no", "nno": "no", "bokmål": "no", "bokmal": "no", "norsk": "no"}
 
@@ -39,6 +48,19 @@ def to_iso(locale: str | None) -> str:
     return _ALIASES.get(value, value[:2]) or "en"
 
 
+def _variant(locale: str | None) -> tuple[str, str] | None:
+    return _VARIANTS.get((locale or "").strip().lower().replace("_", "-"))
+
+
+def voice_key(locale: str | None) -> str:
+    """Key for choosing a voice: "pt-BR" / "pt-PT" for a regional variant, the ISO code otherwise."""
+    variant = _variant(locale)
+    return variant[0] if variant else to_iso(locale)
+
+
 def display_name(locale: str | None) -> str:
+    variant = _variant(locale)
+    if variant:
+        return variant[1]
     iso = to_iso(locale)
     return ISO_TO_NAME.get(iso, locale or iso).capitalize()

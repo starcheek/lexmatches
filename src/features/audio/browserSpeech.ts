@@ -6,7 +6,7 @@ const BCP47: Record<string, string> = {
   spanish: "es-ES", es: "es-ES",
   german: "de-DE", de: "de-DE",
   italian: "it-IT", it: "it-IT",
-  portuguese: "pt-BR", pt: "pt-BR",
+  portuguese: "pt-PT", "brazilian portuguese": "pt-BR", pt: "pt-BR",
   russian: "ru-RU", ru: "ru-RU",
   japanese: "ja-JP", ja: "ja-JP",
   latvian: "lv-LV", lv: "lv-LV",
@@ -44,10 +44,11 @@ export const browserSpeechSupported = () => typeof window !== "undefined" && "sp
 export function pickVoice(lang: string): SpeechSynthesisVoice | null {
   if (!browserSpeechSupported()) return null;
   const codes = VOICE_ALIASES[isoOf(lang)] ?? [isoOf(lang)];
-  const matching = window.speechSynthesis.getVoices().filter((v) => {
-    const vl = v.lang.toLowerCase().replace("_", "-"); // some Android voices say "nb_NO"
-    return codes.some((c) => vl === c || vl.startsWith(`${c}-`));
-  });
+  const tagOf = (v: SpeechSynthesisVoice) => v.lang.toLowerCase().replace("_", "-"); // some Android voices say "nb_NO"
+  const all = window.speechSynthesis.getVoices().filter((v) => codes.some((c) => tagOf(v) === c || tagOf(v).startsWith(`${c}-`)));
+  // Portuguese has two accents: a voice of the right country when there is one, any Portuguese voice otherwise
+  const regional = isoOf(lang) === "pt" ? all.filter((v) => tagOf(v) === bcp47(lang).toLowerCase()) : [];
+  const matching = regional.length ? regional : all;
   return (
     matching.find((v) => /premium|enhanced|natural|neural/i.test(v.name)) ??
     matching.find((v) => v.localService) ??

@@ -60,6 +60,8 @@ See [Frontend](#frontend) below.
 
 Locales are stored as the UI sends them (`"french"`, `"english"`, …); `app/languages.py` maps to ISO codes.
 22 languages: ca cs da de el en es fi fr hu it ja lv nl no pl pt ro ru sv tr uk (`no` = Norwegian Bokmål).
+Portuguese is offered as two locales, "portuguese" (Portugal) and "brazilian portuguese": both are `pt` for ingest,
+but the translator is told which one and each has its own voice (`app/languages.py`).
 Adding one: `lib/languages.ts` + `app/languages.py`; per-language tables in `app/ingest/sentences.py`
 (abbreviations, ordinals), `ingest/formats/text.py` (function words), `ingest/levels.py` and
 `formats/pdf_structure.py` (chapter words), `formats/pdf_layout.py` (one-letter words), `ingest/ocr.py`

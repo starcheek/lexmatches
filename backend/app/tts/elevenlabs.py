@@ -36,7 +36,7 @@ class ElevenLabsProvider:
         self.api_key = api_key
 
     def voice_for(self, lang: str, voice: str | None) -> str:
-        return voice or VOICE_MAP.get(lang, VOICE_MAP["en"])
+        return voice or VOICE_MAP.get(lang.split("-")[0], VOICE_MAP["en"])
 
     def status(self, voice: str) -> dict:
         return {"state": "ready"}

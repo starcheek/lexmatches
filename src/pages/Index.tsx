@@ -4,6 +4,8 @@ import { api, isLoggedIn, type User } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, BookOpen, Languages, MousePointerClick, TrendingDown, Upload, Zap } from "lucide-react";
 import ReadingView from "@/components/ReadingView";
+import { DEMO_SAMPLES } from "@/lib/demoSamples";
+import { cn } from "@/lib/utils";
 
 const Kbd = ({ children }: { children: React.ReactNode }) => (
   <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-[0.7rem] text-foreground">{children}</kbd>
@@ -13,31 +15,9 @@ const Index = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
 
-  // Demo page in the v2 translation format (see docs/ARCHITECTURE.md): the opening of
-  // "Le Tour du monde en quatre-vingts jours" (Jules Verne, 1872, public domain).
-  const demoLines: [string, string][][] = [
-    [["En l'année 1872,", "in the year 1872,"], ["la maison", "the house"], ["portant", "bearing"], ["le numéro 7", "the number 7"],
-     ["de Saville-row", "of Saville Row"], ["était habitée", "was lived in"], ["par Phileas Fogg,", "by Phileas Fogg,"],
-     ["l'un des membres", "one of the members"], ["les plus singuliers", "the most peculiar"], ["du Reform-Club", "of the Reform Club"],
-     ["de Londres.", "of London."]],
-    [["On ne savait", "one knew"], ["rien", "nothing"], ["de lui,", "about him,"], ["sinon que", "except that"], ["c'était", "he was"],
-     ["un fort galant homme", "a very gallant man"], ["et l'un", "and one"], ["des plus beaux", "of the finest"],
-     ["gentlemen", "gentlemen"], ["de la haute société", "of high society"], ["anglaise.", "English."]],
-    [["On disait", "people said"], ["qu'il ressemblait", "that he resembled"], ["à Byron,", "Byron,"], ["mais", "but"],
-     ["un Byron", "a Byron"], ["à moustaches", "with a moustache"], ["et à favoris,", "and whiskers,"], ["qui aurait vécu", "who might have lived"],
-     ["mille ans", "a thousand years"], ["sans vieillir.", "without ageing."]],
-  ];
-  const demoSentences = [
-    "In the year 1872, the house at number 7 Saville Row was lived in by Phileas Fogg, one of the most peculiar members of the Reform Club of London.",
-    "Nothing was known of him, except that he was a very gallant man and one of the finest gentlemen of English high society.",
-    "People said that he resembled Byron, but a Byron with a moustache and whiskers, who might have lived a thousand years without ageing.",
-  ];
-  const demoText = demoLines.map((line) => line.map(([o]) => o).join(" ")).join(" ");
-  const demoTranslation = {
-    version: 2,
-    lines: demoLines.map((line) => line.map(([original, translation]) => ({ original, translation }))),
-    sentences: demoLines.map((line, i) => ({ source: line.map(([o]) => o).join(" "), translation: demoSentences[i], paragraph: 0 })),
-  };
+  // The same demo page in several language pairs (lib/demoSamples.ts)
+  const [sampleId, setSampleId] = useState(DEMO_SAMPLES[0].id);
+  const sample = DEMO_SAMPLES.find((s) => s.id === sampleId) ?? DEMO_SAMPLES[0];
 
   useEffect(() => {
     if (!isLoggedIn()) return;
@@ -158,23 +138,43 @@ const Index = () => {
             ))}
           </ol>
           <p className="mx-4 mb-3 text-center text-sm font-medium text-primary">
-            Try it: click a phrase you don't know, or point here and use the arrow keys.
+            Try it: pick a language, then click a phrase you don't know, or point at the text and use the arrow keys.
           </p>
+          <div className="mx-4 mb-4 flex flex-wrap justify-center gap-2 sm:mx-auto sm:max-w-3xl" role="group" aria-label="Demo language pair" data-testid="demo-pairs">
+            {DEMO_SAMPLES.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                aria-pressed={s.id === sample.id}
+                onClick={() => setSampleId(s.id)}
+                className={cn(
+                  "rounded-full border px-3 py-1.5 text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+                  s.id === sample.id
+                    ? "border-accent bg-accent/10 font-medium text-accent"
+                    : "bg-card text-muted-foreground hover:border-accent/50 hover:text-foreground",
+                )}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
           <div className="mx-4 rounded-xl border bg-card py-6 shadow-soft sm:mx-auto sm:max-w-3xl sm:py-8">
             <ReadingView
+              key={sample.id}
               pageNumber={1}
-              originalText={demoText}
-              translationData={demoTranslation}
+              originalText={sample.text}
+              translationData={sample.translation}
               onNextPage={() => {}}
               onPrevPage={() => {}}
               totalPages={1}
               bookId="demo"
-              originalLocale="french"
+              originalLocale={sample.locale}
               demo
             />
           </div>
           <p className="mx-4 mt-3 text-center text-xs text-muted-foreground">
-            Abridged from Jules Verne, <i>Le Tour du monde en quatre-vingts jours</i> (1872), public domain.
+            {sample.id === DEMO_SAMPLES[0].id ? "Abridged from" : "Abridged and translated from"} Jules Verne,{" "}
+            <i>Le Tour du monde en quatre-vingts jours</i> (1872), public domain.
           </p>
         </section>
       </main>

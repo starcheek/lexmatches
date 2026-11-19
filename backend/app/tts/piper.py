@@ -37,6 +37,7 @@ DEFAULT_VOICES = {
     "fr": "fr_FR-siwis-medium",
     "ru": "ru_RU-irina-medium",
     "pt": "pt_BR-cadu-medium",  # CER 2.0 % vs faber 6.7 %, tugão (pt_PT) 10 %
+    "pt-PT": "pt_PT-tugão-medium",  # the only European Portuguese voice; "pt-BR" falls back to "pt"
     "lv": "lv_LV-aivars-medium",  # the only Latvian voice
     "de": "de_DE-thorsten-medium",
     "es": "es_ES-davefx-medium",
@@ -114,9 +115,10 @@ class PiperProvider:
             if voice not in self.voices.values():
                 raise ValueError(f"Unknown voice '{voice}'")
             return voice
-        if lang not in self.voices:
+        key = lang if lang in self.voices else lang.split("-")[0]  # "pt-BR" -> "pt"
+        if key not in self.voices:
             raise ValueError(f"No server voice for language '{lang}'")
-        return self.voices[lang]
+        return self.voices[key]
 
     def _files(self, key: str) -> tuple[Path, Path]:
         return self.dir / f"{key}.onnx", self.dir / f"{key}.onnx.json"

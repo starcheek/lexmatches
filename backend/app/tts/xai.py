@@ -14,6 +14,7 @@ API_URL = "https://api.x.ai/v1/tts"
 LANG_CODES = {
     "en": "en", "fr": "fr", "de": "de", "ru": "ru", "it": "it", "ja": "ja", "ko": "ko", "zh": "zh", "tr": "tr",
     "vi": "vi", "hi": "hi", "id": "id", "bn": "bn", "es": "es-ES", "pt": "pt-PT", "ar": "ar-SA",
+    "pt-PT": "pt-PT", "pt-BR": "pt-BR",
 }
 # "[pause]" and "<whisper>" are speech tags to the API: book text must not trigger them. One character for
 # one character, so the timings still line up with the text.
@@ -48,7 +49,7 @@ class XaiProvider:
 
     def voice_for(self, lang: str, voice: str | None) -> str:
         # the language travels inside the voice id: synthesize() only gets the voice
-        return voice or f"{self.voice}:{LANG_CODES.get(lang, 'auto')}"
+        return voice or f"{self.voice}:{LANG_CODES.get(lang) or LANG_CODES.get(lang.split('-')[0], 'auto')}"
 
     def status(self, voice: str) -> dict:
         return {"state": "ready"}

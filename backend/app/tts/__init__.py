@@ -20,7 +20,7 @@ from dataclasses import asdict, dataclass
 
 from app import storage
 from app.config import settings
-from app.languages import to_iso
+from app.languages import to_iso, voice_key
 from app.tts.piper import VoiceNotReady
 from app.tts.text import speakable, spoken_units
 
@@ -120,7 +120,7 @@ def plan(text: str, language: str | None, *, user_id, scope: str = "misc", voice
     prov = get_provider(provider)
     lang = to_iso(language)
     try:
-        voice_id = prov.voice_for(lang, voice)
+        voice_id = prov.voice_for(voice_key(language), voice)
     except ValueError as e:
         raise Unsupported(str(e)) from None
     units = spoken_units(text, lang)
@@ -185,7 +185,7 @@ def voice_status(language: str | None, provider: str | None = None) -> dict:
     prov = get_provider(provider)
     lang = to_iso(language)
     try:
-        voice = prov.voice_for(lang, None)
+        voice = prov.voice_for(voice_key(language), None)
     except ValueError:
         return {"language": lang, "provider": prov.name, "voice": None, "state": "unavailable"}
     return {"language": lang, "provider": prov.name, "voice": voice, **prov.prepare(voice)}

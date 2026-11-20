@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, isLoggedIn, type User } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, BookOpen, Languages, MousePointerClick, TrendingDown, Upload, Zap } from "lucide-react";
+import { ArrowRight, BookOpen, MousePointerClick, TrendingDown, Upload } from "lucide-react";
 import ReadingView from "@/components/ReadingView";
 import { DEMO_SAMPLES } from "@/lib/demoSamples";
 import { cn } from "@/lib/utils";
@@ -73,72 +73,28 @@ const Index = () => {
         </section>
 
         <section className="container mx-auto px-4 py-16">
-          <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-            <div className="text-center space-y-3">
-              <div className="h-12 w-12 rounded-full bg-accent/10 flex items-center justify-center mx-auto">
-                <BookOpen className="h-6 w-6 text-accent" />
-              </div>
-              <h3 className="text-xl font-serif font-semibold">Upload Documents</h3>
-              <p className="text-muted-foreground">
-                Import a PDF, EPUB, Word document, text file or web page in any language and we'll extract the text for you
-              </p>
-            </div>
-            <div className="text-center space-y-3">
-              <div className="h-12 w-12 rounded-full bg-accent/10 flex items-center justify-center mx-auto">
-                <Languages className="h-6 w-6 text-accent" />
-              </div>
-              <h3 className="text-xl font-serif font-semibold">AI Translation</h3>
-              <p className="text-muted-foreground">
-                Get accurate word-by-word translations powered by advanced AI
-              </p>
-            </div>
-            <div className="text-center space-y-3">
-              <div className="h-12 w-12 rounded-full bg-accent/10 flex items-center justify-center mx-auto">
-                <Zap className="h-6 w-6 text-accent" />
-              </div>
-              <h3 className="text-xl font-serif font-semibold">Interactive Reading</h3>
-              <p className="text-muted-foreground">
-                Look up single words and phrases, or the whole page, and see how often you needed help
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <section id="demo" className="py-16">
-          <div className="container mx-auto px-4 text-center mb-8">
-            <h3 className="text-3xl font-serif font-bold text-primary mb-3">How it works</h3>
-            <p className="mx-auto max-w-2xl text-muted-foreground">
-              You read the original. The translation stays hidden until you ask for it, one word at a time, and every lookup is counted.
-            </p>
-          </div>
-          <ol className="mx-4 mb-8 grid gap-4 sm:mx-auto sm:max-w-5xl sm:grid-cols-2 lg:grid-cols-4" data-testid="walkthrough">
+          <h3 className="mb-10 text-center text-3xl font-serif font-bold text-primary">How it works</h3>
+          <ol className="mx-auto grid max-w-5xl gap-8 sm:grid-cols-2 lg:grid-cols-4" data-testid="walkthrough">
             {[
-              { icon: <Upload />, title: "Add something to read", text: "Upload a book (PDF, EPUB, DOCX…), paste a text or import a web page in the language you are learning." },
-              { icon: <BookOpen />, title: "Read the original", text: "Try to understand each line on your own first. Nothing is translated on screen until you ask." },
-              {
-                icon: <MousePointerClick />,
-                title: "Look up only what you don't know",
-                text: (
-                  <>
-                    Click or tap a word or phrase to see its meaning beneath it. On a keyboard, <Kbd>↑</Kbd> <Kbd>↓</Kbd> move line by line
-                    and <Kbd>←</Kbd> or <Kbd>→</Kbd> shows or hides the translation of the whole page.
-                  </>
-                ),
-              },
-              { icon: <TrendingDown />, title: "Watch the counter fall", text: "Every lookup is counted per page. Fewer lookups over time means you are understanding more by yourself." },
-            ].map((step, i) => (
-              <li key={i} className="rounded-xl border bg-card p-5 text-left shadow-sm">
-                <div className="mb-3 flex items-center gap-3">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent/10 text-accent [&_svg]:h-4 [&_svg]:w-4">{step.icon}</span>
-                  <span className="text-sm font-medium text-muted-foreground">Step {i + 1}</span>
+              { icon: <Upload />, title: "Add a text", text: "Upload a PDF, EPUB or Word file, paste text or import a web page." },
+              { icon: <BookOpen />, title: "Read the original", text: "Nothing is translated until you ask." },
+              { icon: <MousePointerClick />, title: "Look up what you don't know", text: "Tap a word or phrase to see its AI translation beneath it." },
+              { icon: <TrendingDown />, title: "Need less help", text: "Lookups are counted per page. Watch the number fall." },
+            ].map((step) => (
+              <li key={step.title} className="space-y-3 text-center">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent [&_svg]:h-6 [&_svg]:w-6">
+                  {step.icon}
                 </div>
-                <h4 className="mb-1 font-serif text-lg font-semibold">{step.title}</h4>
-                <p className="text-sm leading-relaxed text-muted-foreground">{step.text}</p>
+                <h4 className="text-xl font-serif font-semibold">{step.title}</h4>
+                <p className="text-muted-foreground">{step.text}</p>
               </li>
             ))}
           </ol>
+        </section>
+
+        <section id="demo" className="py-16">
           <p className="mx-4 mb-3 text-center text-sm font-medium text-primary">
-            Try it: pick a language, then click a phrase you don't know, or point at the text and use the arrow keys.
+            Try it: pick a language and tap a phrase. <Kbd>↑</Kbd> <Kbd>↓</Kbd> move by line, <Kbd>←</Kbd> <Kbd>→</Kbd> toggle the whole page.
           </p>
           <div className="mx-4 mb-4 grid grid-cols-2 gap-2 sm:mx-auto sm:max-w-3xl sm:grid-cols-4" role="group" aria-label="Demo language pair" data-testid="demo-pairs">
             {DEMO_SAMPLES.map((s) => (

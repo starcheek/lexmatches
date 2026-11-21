@@ -7,7 +7,6 @@ import numpy as np
 import pytest
 
 from app import storage, tts
-from app.tts.elevenlabs import unit_times_from_alignment
 from app.tts.piper import phones, unit_times
 from app.tts.text import spoken_units
 
@@ -172,16 +171,6 @@ def test_unit_times_alignment():
     # liaison: an extra phone in context does not shift the next unit
     actual = [("d", 0, 5), ("e", 5, 10), ("t", 10, 15), ("a", 15, 30)]
     assert unit_times([list("de"), ["a"]], actual) == [(0, 10), (15, 30)]
-
-
-def test_elevenlabs_alignment_parsing():
-    units = ["Hi", "there"]
-    chars = list("Hi there")
-    alignment = {"characters": chars,
-                 "character_start_times_seconds": [i * 0.1 for i in range(len(chars))],
-                 "character_end_times_seconds": [i * 0.1 + 0.1 for i in range(len(chars))]}
-    times, duration = unit_times_from_alignment(units, alignment)
-    assert times == [(0.0, 0.2), (0.3, 0.8)] and duration == 0.8
 
 
 def test_piper_voice_url():

@@ -10,7 +10,7 @@ flowchart LR
     A -->|S3 / boto3| M[(minio<br/>bucket "books":<br/>PDFs + per-user tts cache)]
     A -->|anthropic SDK| C[Claude API<br/>optional]
     A -->|local| T[Piper TTS<br/>voices volume]
-    A -.->|optional| E[ElevenLabs / Stripe]
+    A -.->|optional| E[xAI Grok TTS / Stripe]
 ```
 
 | Service | Image | Host port | Notes |
@@ -33,7 +33,7 @@ flowchart LR
 | `services/extraction.py` | **PDF extraction** (PyMuPDF plain text per page) — extraction agent works here |
 | `services/processing.py` | book job: download PDF → `extract_pages` → replace `pages` rows |
 | `translation/` | **translation**: `base.py` (Translator protocol, `Chunk`), `segment.py` (interim page → sentences), `prompts.py`, `claude.py`, `mock.py`, `align.py` (deterministic chunk alignment), `pipeline.py` (chunking, context, glossary, resume, persistence) — see [Translation](#translation) |
-| `tts/` | **TTS**: `__init__.py` (plan → cache → bounded synth pool, per-user cache, deletion, lifecycle, preload), `text.py` (normalisation), `piper.py` (voices, alignment, word timings), `audio.py` (MP3), `elevenlabs.py` |
+| `tts/` | **TTS**: `__init__.py` (plan → cache → bounded synth pool, per-user cache, deletion, lifecycle, preload), `text.py` (normalisation), `piper.py` (voices, alignment, word timings), `audio.py` (MP3), `xai.py` (Grok voices) |
 | `services/export.py`, `export_template.html` | standalone interlinear HTML export |
 | `routers/billing.py` | Stripe (off unless `STRIPE_SECRET_KEY`) |
 | `routers/progress.py` | reading sessions + progress-page data |
@@ -258,8 +258,8 @@ book's voice, and a synthesis request for a voice still downloading answers 503 
 (Piper has voices for all of them, untested here; with `TTS_PROVIDER=xai` every language is spoken by Grok):
 the reader uses the browser's voice. **Japanese** has no server voice (`ja_JP-hi_fi_captain-medium` exists but needs
 pyopenjtalk + its dictionary); the client uses the browser's Web Speech voice and the player says so.
-ElevenLabs (`TTS_PROVIDER=elevenlabs` + key) uses the same interface via `/with-timestamps`
-(character alignment → word timings); only its response parsing is tested, not the live API.
+The provider and voice are chosen by the server only (`TTS_PROVIDER`, `XAI_VOICE`); a client cannot pick a
+paid provider. Newly synthesized characters count against `DAILY_TTS_CHARS` per user (cache hits are free).
 
 **Privacy / deletion.** Cache objects are per user and book: `tts/<user_id>/<book_id|misc>/<sha>.mp3|json`.
 Audio is served only to its owner. `DELETE /api/books/{id}` deletes the book's prefix;

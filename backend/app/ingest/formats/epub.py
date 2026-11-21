@@ -11,7 +11,7 @@ import zlib
 
 from lxml import etree
 
-from app.ingest import drm
+from app.ingest import drm, safezip
 from app.ingest.encoding import decode
 from app.ingest.formats.html import html_to_blocks, noteref_targets, parse_html
 from app.ingest.ir import Document, IngestError
@@ -36,8 +36,8 @@ class ZipReader:
             self.names = list(self.entries)
 
     def _scan(self, data: bytes, warnings: list) -> None:
-        pos = 0
-        while True:
+        pos, total = 0, 0
+        while total < safezip.MAX_TOTAL:
             i = data.find(b"PK\x03\x04", pos)
             if i < 0 or i + 30 > len(data):
                 break
@@ -54,9 +54,12 @@ class ZipReader:
                     self.entries[name] = data[start:start + csize] if sized else data[start:data.find(b"PK", start)]
                 elif method == 8:
                     d = zlib.decompressobj(-15)
-                    self.entries[name] = d.decompress(data[start:start + csize] if sized else data[start:])
+                    # bounded: a crafted entry cannot inflate past MAX_ENTRY (zip bomb)
+                    self.entries[name] = d.decompress(data[start:start + csize] if sized else data[start:],
+                                                      safezip.MAX_ENTRY)
                     if not d.eof:
                         warnings.append(f"truncated entry recovered partially: {name}")
+                total += len(self.entries.get(name, b""))
             except zlib.error:
                 warnings.append(f"unrecoverable entry: {name}")
             pos = start + csize if sized else start + 1

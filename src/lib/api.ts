@@ -178,8 +178,9 @@ interface AuthResponse {
 
 export const api = {
   // auth
-  async signUp(email: string, password: string) {
-    const r = await send<AuthResponse>("POST", "/auth/signup", { email, password });
+  authConfig: () => json<{ signup_open: boolean; turnstile_site_key: string | null }>("/auth/config"),
+  async signUp(email: string, password: string, captcha?: string | null) {
+    const r = await send<AuthResponse>("POST", "/auth/signup", { email, password, captcha: captcha ?? undefined });
     setToken(r.token);
     return r.user;
   },

@@ -11,13 +11,20 @@ from app.config import settings
 from app.ingest import MAX_TEXT_CHARS, Document, IngestError, apply_overrides, build_units, ingest_file, ingest_text
 from app.ingest.fetch import fetch
 from app.ingest.pipeline import precheck
-from app.languages import NAME_TO_ISO, to_iso
+from app.languages import NAME_TO_ISO, is_supported, to_iso
 from app.routers.common import BOOK_FIELDS, PAGE_FIELDS, book_out, owned_book, page_out
 from app.services.export import render_export
 from app.services.processing import create_uploaded_book, store_document
 
 router = APIRouter(prefix="/api/books", tags=["books"])
 _IMPORTED = ("paste", "paste_html", "url")  # source formats without a stored original file
+
+
+def _check_locales(*locales: str) -> None:
+    """Book languages reach the translation prompt: only known languages are accepted."""
+    for locale in locales:
+        if len(locale) > 40 or not is_supported(locale):
+            raise HTTPException(422, "Unsupported language")
 
 
 def _rejected(e: IngestError) -> JSONResponse:
@@ -46,8 +53,10 @@ def upload_book(
 ):
     """Any supported file (PDF, EPUB, FB2, DOCX, ODT, RTF, Markdown, HTML, TXT; sniffed from the content).
     DRM, MOBI and unknown formats are rejected here; parsing runs in the background (book `pending`)."""
-    data = file.file.read()
-    if len(data) > settings.max_upload_mb * 1024 * 1024:
+    _check_locales(original_locale, target_locale)
+    limit = settings.max_upload_mb * 1024 * 1024
+    data = file.file.read(limit + 1)  # never more than the limit in memory
+    if len(data) > limit:
         raise HTTPException(413, f"File size must be less than {settings.max_upload_mb}MB")
     try:
         fmt = precheck(data)
@@ -78,6 +87,7 @@ class TextBook(BaseModel):
 @router.post("/text", status_code=201)
 def create_text_book(body: TextBook, user: dict = Depends(auth.current_user)):
     """Pasted plain text, cleaned and structured like /import without a preview (kept for existing clients)."""
+    _check_locales(body.original_locale, body.target_locale)
     try:
         doc = ingest_text(body.text, to_iso(body.original_locale))
     except IngestError as e:
@@ -133,7 +143,8 @@ def preview_import(body: ImportSource, user: dict = Depends(auth.current_user)):
 @router.post("/import", status_code=201)
 def commit_import(body: ImportCommit, user: dict = Depends(auth.current_user)):
     """Create a book from pasted text / HTML / a URL with the user's preview decisions applied."""
-    language = to_iso(body.language) if body.language else to_iso(body.original_locale)
+    _check_locales(body.original_locale, body.target_locale)
+    language =to_iso(body.language) if body.language else to_iso(body.original_locale)
     try:
         doc, digest = _ingest_source(body, language)
         if body.url and body.content_hash and body.content_hash != digest:

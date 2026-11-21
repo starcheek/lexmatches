@@ -94,7 +94,9 @@ def create_user(body: NewUser):
 @router.post("/users/{user_id}/password")
 def reset_password(user_id: UUID, body: Password):
     password = _password(body.password)
-    if not db.execute("UPDATE users SET password_hash = %s WHERE id = %s", (auth.hash_password(password), user_id)):
+    # token_version + 1: sessions signed in with the old password end
+    if not db.execute("UPDATE users SET password_hash = %s, token_version = token_version + 1 WHERE id = %s",
+                      (auth.hash_password(password), user_id)):
         raise HTTPException(404, "User not found")
     return {"password": password}
 

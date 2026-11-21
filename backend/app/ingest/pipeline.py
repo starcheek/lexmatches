@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 import time
 
-from app.ingest import drm, langid, levels, ocr, sniff
+from app.ingest import drm, langid, levels, ocr, safezip, sniff
 from app.ingest.formats import epub, fb2, html, office, text as textfmt
 from app.ingest.ir import Block, Document, IngestError, NoText, UnsupportedFormat
 from app.ingest.sentences import segment_block
@@ -148,6 +148,8 @@ def _check(data: bytes, epub_drm: bool = True) -> str:
     """Sniff + DRM / unsupported / binary checks without parsing; returns the raw sniffed kind."""
     if len(data) > MAX_FILE_BYTES:
         raise IngestError(f"File too large (max {MAX_FILE_BYTES // 1024 // 1024} MB).")
+    if data[:2] == b"PK":
+        safezip.check(data)  # before anything inflates it
     kind = sniff.sniff(data)
     drm.check(kind, data)
     if kind == "epub" and epub_drm:

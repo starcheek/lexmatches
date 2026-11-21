@@ -19,9 +19,11 @@ def _stripe():
     return stripe
 
 
-def _customer_id(stripe, email: str) -> str | None:
-    customers = stripe.Customer.list(email=email, limit=1)
-    return customers.data[0].id if customers.data else None
+def _customer_id(user: dict) -> str | None:
+    """The Stripe customer created for this account at checkout. Never looked up by e-mail: addresses here are
+    not verified, so anyone could sign up with a paying customer's address and reach their billing portal."""
+    row = db.fetch_one("SELECT stripe_customer_id FROM users WHERE id = %s", (user["id"],))
+    return row["stripe_customer_id"] if row else None
 
 
 @router.get("/subscription")
@@ -30,10 +32,10 @@ def subscription(user: dict = Depends(auth.current_user)):
         return {"billing_enabled": False, "subscribed": True, "unlimited": True, "freePages": 0}
     row = db.fetch_one("SELECT pages_translated_free FROM users WHERE id = %s", (user["id"],))
     free_pages = row["pages_translated_free"] if row else 0
-    stripe = _stripe()
-    customer = _customer_id(stripe, user["email"])
+    customer = _customer_id(user)
     if customer is None:
         return {"billing_enabled": True, "subscribed": False, "unlimited": False, "freePages": free_pages}
+    stripe = _stripe()
     subs = stripe.Subscription.list(customer=customer, status="active", limit=1)
     product_id = subscription_end = None
     if subs.data:
@@ -55,7 +57,8 @@ def subscription(user: dict = Depends(auth.current_user)):
 
 
 def _origin(request: Request) -> str:
-    return request.headers.get("origin") or str(request.base_url).rstrip("/")
+    """Where Stripe sends the user back: the configured site, never the request's Origin header (open redirect)."""
+    return settings.public_origin or str(request.base_url).rstrip("/")
 
 
 @router.post("/billing/checkout")
@@ -63,11 +66,14 @@ def checkout(request: Request, user: dict = Depends(auth.current_user)):
     if not settings.billing_enabled:
         raise HTTPException(404, "Billing is disabled")
     stripe = _stripe()
-    customer = _customer_id(stripe, user["email"])
+    customer = _customer_id(user)
+    if customer is None:
+        customer = stripe.Customer.create(email=user["email"], metadata={"user_id": str(user["id"])}).id
+        db.execute("UPDATE users SET stripe_customer_id = %s WHERE id = %s", (customer, user["id"]))
     origin = _origin(request)
     session = stripe.checkout.Session.create(
         customer=customer,
-        customer_email=None if customer else user["email"],
+        client_reference_id=str(user["id"]),
         line_items=[{"price": settings.stripe_price_id, "quantity": 1}],
         mode="subscription",
         success_url=f"{origin}/dashboard?success=true",
@@ -80,9 +86,9 @@ def checkout(request: Request, user: dict = Depends(auth.current_user)):
 def portal(request: Request, user: dict = Depends(auth.current_user)):
     if not settings.billing_enabled:
         raise HTTPException(404, "Billing is disabled")
-    stripe = _stripe()
-    customer = _customer_id(stripe, user["email"])
+    customer = _customer_id(user)
     if customer is None:
         raise HTTPException(404, "No Stripe customer found for this user")
+    stripe = _stripe()
     session = stripe.billing_portal.Session.create(customer=customer, return_url=f"{_origin(request)}/dashboard")
     return {"url": session.url}

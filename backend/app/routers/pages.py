@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
-from app import auth, db, jobs
+from app import auth, db, jobs, quota
 from app.routers.common import owned_page, page_out
 from app.translation.pipeline import page_progress, translate_page
 
@@ -24,8 +24,11 @@ def start_translation(page_id: UUID, user: dict = Depends(auth.current_user)):
     key = f"page:{page_id}"
     started = False
     if not jobs.is_running(key):
+        quota.reserve_page(user["id"])  # 429 over the daily limit (Claude API cost)
         # Mark immediately so pollers never see a stale 'pending'/'failed' after this call returns.
         db.execute("UPDATE pages SET status = 'processing', error = NULL WHERE id = %s", (page_id,))
         started = jobs.submit(key, translate_page, str(page_id))
+        if not started:  # a concurrent request started it first
+            quota.release_page(user["id"])
     progress = page_progress(page)
     return JSONResponse({"status": "processing", "started": started, **progress}, status_code=202)

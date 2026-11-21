@@ -1,10 +1,11 @@
 """TTS endpoints.
 
-POST /api/tts            {text, language?, book_id?, voice?, provider?} -> clip metadata (JSON)
+POST /api/tts            {text, language?, book_id?} -> clip metadata (JSON); provider/voice are server settings
 GET  /api/tts/audio/...  the clip's audio (immutable, per user)
 POST /api/tts/prepare    {language} -> voice status; starts downloading/loading the voice
 """
 import asyncio
+import logging
 import threading
 import time
 from collections import defaultdict, deque
@@ -15,24 +16,24 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
-from app import auth, storage, tts
+from app import auth, quota, storage, tts
 from app.config import settings
 from app.routers.common import owned_book
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/tts", tags=["tts"])
 
 
+# The provider and voice are not client choices: a client could otherwise force a paid provider or put an
+# arbitrary voice id into the provider's API URL. Extra fields sent by old clients are ignored.
 class TTSRequest(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
     language: str | None = Field(default=None, max_length=32)
     book_id: UUID | None = None  # cache scope: deleted with the book
-    voice: str | None = Field(default=None, max_length=100)
-    provider: str | None = Field(default=None, max_length=20)
 
 
 class PrepareRequest(BaseModel):
     language: str | None = Field(default=None, max_length=32)
-    provider: str | None = Field(default=None, max_length=20)
 
 
 class _RateLimiter:
@@ -76,8 +77,7 @@ async def text_to_speech(body: TTSRequest, user: dict = Depends(auth.current_use
         await run_in_threadpool(owned_book, body.book_id, user)
         scope = str(body.book_id)
     try:
-        plan = tts.plan(body.text.strip(), body.language, user_id=user["id"], scope=scope,
-                        voice=body.voice, provider=body.provider)
+        plan = tts.plan(body.text.strip(), body.language, user_id=user["id"], scope=scope)
     except tts.Unsupported as e:
         raise HTTPException(404, str(e))
     except ValueError as e:
@@ -85,14 +85,17 @@ async def text_to_speech(body: TTSRequest, user: dict = Depends(auth.current_use
 
     clip = await run_in_threadpool(tts.cached, plan)
     if clip is None:
+        if plan.provider.name != "piper":  # paid provider: count what is about to be synthesized
+            await run_in_threadpool(quota.reserve_tts, user["id"], sum(len(u) for u in plan.units))
         try:
             clip = await asyncio.wrap_future(tts.submit(plan))
         except tts.VoiceNotReady:
             return _unavailable("Preparing voice", 3)
         except tts.Busy:
             return _unavailable("Speech synthesis is busy", 2)
-        except Exception as e:
-            raise HTTPException(502, f"TTS failed: {e}")
+        except Exception:
+            log.exception("speech synthesis failed (%s)", plan.provider.name)  # provider detail stays in the log
+            raise HTTPException(502, "Speech synthesis failed")
     return clip.public()
 
 
@@ -113,4 +116,4 @@ def audio(scope: str, name: str, request: Request, user: dict = Depends(auth.cur
 @router.post("/prepare")
 def prepare(body: PrepareRequest, user: dict = Depends(auth.current_user)):
     """{language, provider, voice, state: ready|loading|downloading|missing|error|unavailable, progress?}"""
-    return tts.voice_status(body.language, body.provider)
+    return tts.voice_status(body.language)

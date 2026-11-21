@@ -48,6 +48,12 @@ def to_iso(locale: str | None) -> str:
     return _ALIASES.get(value, value[:2]) or "en"
 
 
+def is_supported(locale: str | None) -> bool:
+    """A language this app knows by name, ISO code, regional variant or alias (case-insensitive)."""
+    value = (locale or "").strip().lower().replace("_", "-")
+    return bool(value) and (value in NAME_TO_ISO or value in ISO_TO_NAME or value in _VARIANTS or value in _ALIASES)
+
+
 def _variant(locale: str | None) -> tuple[str, str] | None:
     return _VARIANTS.get((locale or "").strip().lower().replace("_", "-"))
 

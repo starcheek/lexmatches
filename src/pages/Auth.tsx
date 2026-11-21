@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, isLoggedIn } from "@/lib/api";
+import { Turnstile } from "@/components/Turnstile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,6 +26,15 @@ const Auth = () => {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // Captcha on sign-up, when the server has a Turnstile key. A token is single-use: the widget is remounted
+  // (captchaRound) after every attempt.
+  const [captchaSiteKey, setCaptchaSiteKey] = useState<string | null>(null);
+  const [captcha, setCaptcha] = useState<string | null>(null);
+  const [captchaRound, setCaptchaRound] = useState(0);
+
+  useEffect(() => {
+    api.authConfig().then((c) => setCaptchaSiteKey(c.turnstile_site_key)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     // A login link from the owner (/admin, "/auth#login=<email>:<password>"): sign in without the form and
@@ -63,12 +73,20 @@ const Auth = () => {
       return;
     }
 
+    if (captchaSiteKey && !captcha) {
+      toast.error("Please complete the captcha");
+      setLoading(false);
+      return;
+    }
+
     try {
-      await api.signUp(validation.data.email, validation.data.password);
+      await api.signUp(validation.data.email, validation.data.password, captcha);
       toast.success("Account created!");
       navigate("/dashboard");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Sign up failed");
+      setCaptcha(null);
+      setCaptchaRound((n) => n + 1);
     }
     setLoading(false);
   };
@@ -170,7 +188,8 @@ const Auth = () => {
                     />
                     <p className="text-xs text-muted-foreground">Must be at least 8 characters</p>
                   </div>
-                  <Button type="submit" className="w-full" disabled={loading}>
+                  {captchaSiteKey && <Turnstile key={captchaRound} siteKey={captchaSiteKey} onToken={setCaptcha} />}
+                  <Button type="submit" className="w-full" disabled={loading || (!!captchaSiteKey && !captcha)}>
                     {loading ? "Creating account..." : "Create Account"}
                   </Button>
                 </form>

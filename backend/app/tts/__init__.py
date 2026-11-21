@@ -79,8 +79,6 @@ _providers: dict = {}
 
 def get_provider(name: str | None = None):
     name = (name or settings.tts_provider or "piper").lower()
-    if name == "elevenlabs" and not settings.elevenlabs_api_key:
-        name = "piper"
     if name == "grok":
         name = "xai"
     if name == "xai" and not settings.xai_api_key:
@@ -90,10 +88,6 @@ def get_provider(name: str | None = None):
             from app.tts.xai import XaiProvider
 
             _providers[name] = XaiProvider(settings.xai_api_key, settings.xai_voice)
-        elif name == "elevenlabs":
-            from app.tts.elevenlabs import ElevenLabsProvider
-
-            _providers[name] = ElevenLabsProvider(settings.elevenlabs_api_key)
         else:
             from app.tts.piper import PiperProvider
 

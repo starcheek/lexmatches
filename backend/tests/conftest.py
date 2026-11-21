@@ -22,7 +22,6 @@ os.environ["DATABASE_URL"] = make_conninfo(_base, dbname=TEST_DB)
 os.environ["S3_BUCKET"] = os.environ.get("TEST_S3_BUCKET") or "lexmatches-test"
 os.environ["TRANSLATOR"] = "mock"
 os.environ["STRIPE_SECRET_KEY"] = ""
-os.environ["ELEVENLABS_API_KEY"] = ""
 os.environ["ADMIN_TOKEN"] = "test-admin-token"
 os.environ["PIPER_PRELOAD"] = "none"  # no background voice downloads during tests
 os.environ["SEED_BOOKS"] = "0"  # accounts start empty; tests/test_seed.py turns the sample books on

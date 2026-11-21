@@ -13,7 +13,11 @@ services:
 
   # HTTPS with automatic certificates. Needs SITE_DOMAIN in .env and a DNS A record pointing at this server.
   caddy:
-    image: caddy:2
+    image: caddy:2.11
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
     ports:
       - "80:80"
       - "443:443"

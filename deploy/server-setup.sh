@@ -19,7 +19,11 @@ export DEBIAN_FRONTEND=noninteractive
 command -v docker >/dev/null || curl -fsSL https://get.docker.com | sh >/dev/null
 apt-get install -y -qq rsync curl >/dev/null
 
-ufw allow OpenSSH >/dev/null && ufw allow 80/tcp >/dev/null && ufw allow 443/tcp >/dev/null && ufw --force enable >/dev/null
+ufw allow OpenSSH >/dev/null
+# Once 80/443 have been narrowed to Cloudflare's ranges (ufw rules commented "cloudflare" plus a DOCKER-USER
+# block in /etc/ufw/after*.rules), do not open them to everyone again.
+ufw status | grep -q cloudflare || { ufw allow 80/tcp >/dev/null && ufw allow 443/tcp >/dev/null; }
+ufw --force enable >/dev/null
 
 # deploy user: SSH key only, may run docker (which is root-equivalent on this machine)
 id deploy >/dev/null 2>&1 || adduser --disabled-password --gecos "" deploy >/dev/null

@@ -7,6 +7,8 @@ cd "$(dirname "$0")/.."
 compose="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
 
 $compose up -d --build --remove-orphans
+# Caddy is not recreated when only deploy/Caddyfile changed: apply it without dropping connections
+$compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
 
 for _ in $(seq 1 60); do
   if $compose exec -T web wget -qO- http://127.0.0.1/api/health >/dev/null 2>&1; then

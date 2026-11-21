@@ -24,7 +24,9 @@ services:
     environment:
       SITE_DOMAIN: ${SITE_DOMAIN:?set SITE_DOMAIN in .env, e.g. SITE_DOMAIN=read.example.com}
     volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The directory, not the file: a deploy replaces the Caddyfile (new inode), which a single-file bind
+      # mount would never show. deploy/remote-deploy.sh reloads Caddy after every deploy.
+      - ./deploy:/etc/caddy:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
